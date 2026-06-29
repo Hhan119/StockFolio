@@ -1,4 +1,8 @@
-# StockFolio Local PC Server Deployment
+# StockFolio
+
+투자 포트폴리오 관리 페이지입니다.
+
+## Local PC Server Deployment
 
 StockFolio를 실제 클라우드 서버 없이 개인 PC에서 Docker Compose로 실행하고, 공유기 포트포워딩과 도메인/DDNS를 통해 외부에서 접속할 수 있게 구성하는 방법입니다.
 
