@@ -2,6 +2,39 @@
 
 StockFolio를 실제 클라우드 서버 없이 개인 PC에서 Docker Compose로 실행하고, 공유기 포트포워딩과 도메인/DDNS를 통해 외부에서 접속할 수 있게 구성하는 방법입니다.
 
+## GitHub 관리
+
+이 프로젝트는 루트 폴더를 Git 저장소로 사용합니다.
+
+1. GitHub에서 `StockFolio` 빈 저장소를 생성합니다.
+   - README, `.gitignore`, License 자동 생성은 선택하지 않는 것을 권장합니다.
+2. 생성된 저장소 URL을 원격 저장소로 연결합니다.
+
+```powershell
+git remote add origin https://github.com/<github-id>/StockFolio.git
+```
+
+3. `main` 브랜치를 GitHub에 업로드합니다.
+
+```powershell
+git push -u origin main
+```
+
+4. 이후 변경사항은 아래 흐름으로 관리합니다.
+
+```powershell
+git status
+git add .
+git commit -m "변경 내용 요약"
+git push
+```
+
+주의:
+
+- `.env`, `.env.*`, `custom.properties`처럼 실제 비밀값이 들어갈 수 있는 파일은 Git에 올리지 않습니다.
+- `back/StockFolio/src/main/resources/custom.example.properties`는 키 이름만 정리한 예시 파일입니다.
+- 이미 로컬 설정 파일에 API Key나 OAuth Secret을 입력했다면 GitHub에 올리기 전에 `.gitignore` 적용 여부를 반드시 확인합니다.
+
 ## 구성
 
 - Frontend: React Vite 정적 빌드
