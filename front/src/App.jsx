@@ -22,6 +22,7 @@ import BlogPage from "./pages/blog/BlogPage.jsx";
 import BlogPostPage from "./pages/blog/BlogPostPage.jsx";
 import PublicDividendCalendarPage from "./pages/dividend/PublicDividendCalendarPage.jsx";
 import DividendGuidePage from "./pages/dividend/DividendGuidePage.jsx";
+import EtfHubPage from "./pages/etf/EtfHubPage.jsx";
 import EtfListPage from "./pages/etf/EtfListPage.jsx";
 import EtfDetailPage from "./pages/etf/EtfDetailPage.jsx";
 import EtfCompareListPage from "./pages/etf/EtfCompareListPage.jsx";
@@ -50,11 +51,12 @@ function App() {
           <Route path="/calculators/dca" element={<DcaCalculator />} />
           <Route path="/calculators/compound" element={<CompoundCalculator />} />
           <Route path="/calculators/dividend-reinvestment" element={<DividendReinvestmentCalculator />} />
-          <Route path="/etf" element={<EtfListPage />} />
-          <Route path="/etf/:slug" element={<EtfDetailPage />} />
+          <Route path="/etf" element={<EtfHubPage />} />
+          <Route path="/etf/search" element={<EtfListPage />} />
           <Route path="/etf/compare" element={<EtfCompareListPage />} />
           <Route path="/etf/compare/:slug" element={<EtfComparePage />} />
           <Route path="/etf/rankings/:slug" element={<EtfRankingPage />} />
+          <Route path="/etf/:slug" element={<EtfDetailPage />} />
           <Route path="/dividends/calendar" element={<PublicDividendCalendarPage />} />
           <Route path="/dividends/guide" element={<DividendGuidePage />} />
           <Route path="/analysis/dividend" element={<DividendAnalysisPage />} />

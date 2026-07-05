@@ -5,7 +5,7 @@ import Sidebar from "../components/Sidebar.jsx";
 
 function AppLayout() {
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-950">
+    <div className="min-h-screen bg-slate-100 text-slate-950 dark:bg-slate-950 dark:text-slate-100">
       <div className="flex min-h-screen">
         <Sidebar />
         <main className="min-w-0 flex-1">

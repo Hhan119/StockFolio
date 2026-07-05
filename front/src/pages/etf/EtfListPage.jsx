@@ -1,95 +1,180 @@
-import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import MarketSegmentedControl from "../../components/MarketSegmentedControl.jsx";
 import Seo from "../../components/Seo.jsx";
-import { DATA_AS_OF, etfs, isDomesticEtf, matchesMarketFilter } from "../../data/publicContent.js";
-import { formatMoney, formatPercent } from "../../utils/format.js";
+import {
+  CompareTray,
+  EmptyState,
+  ErrorState,
+  EtfResultCard,
+  EtfResultTable,
+  EtfSearchBox,
+  SkeletonState,
+} from "../../components/etf/index.jsx";
+import { etfMockApi, MOCK_ETFS } from "../../services/etfMockApi.js";
+
+const filterOptions = {
+  region: [
+    ["all", "전체"],
+    ["domestic", "국내"],
+    ["overseas", "해외"],
+  ],
+  assetType: [
+    ["all", "자산 전체"],
+    ["equity", "주식"],
+    ["bond", "채권"],
+    ["reit", "리츠"],
+  ],
+  objective: [
+    ["all", "목적 전체"],
+    ["income", "분배금"],
+    ["distribution-growth", "분배금 성장"],
+    ["growth", "성장"],
+    ["monthly-cashflow", "월 현금흐름"],
+  ],
+  frequency: [
+    ["all", "분배 주기 전체"],
+    ["월", "월"],
+    ["분기", "분기"],
+    ["반기", "반기"],
+  ],
+  management: [
+    ["all", "운용 방식 전체"],
+    ["passive", "패시브"],
+    ["active", "액티브"],
+  ],
+};
+
+function useDebouncedValue(value, delay = 300) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delay);
+    return () => window.clearTimeout(timer);
+  }, [delay, value]);
+  return debounced;
+}
 
 function EtfListPage() {
-  const [marketFilter, setMarketFilter] = useState("all");
-  const [keyword, setKeyword] = useState("");
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [keyword, setKeyword] = useState(searchParams.get("keyword") || "");
+  const [filters, setFilters] = useState({ region: "all", assetType: "all", objective: "all", frequency: "all", management: "all" });
+  const [viewMode, setViewMode] = useState("card");
+  const [compareItems, setCompareItems] = useState([]);
+  const [watchlist, setWatchlist] = useState([]);
+  const debouncedKeyword = useDebouncedValue(keyword);
+
+  const maxCompareItems = typeof window !== "undefined" && window.innerWidth < 768 ? 3 : 4;
 
   const counts = useMemo(
     () => ({
-      all: etfs.length,
-      domestic: etfs.filter(isDomesticEtf).length,
-      overseas: etfs.filter((etf) => !isDomesticEtf(etf)).length,
+      all: MOCK_ETFS.length,
+      domestic: MOCK_ETFS.filter((etf) => etf.listingRegion === "domestic").length,
+      overseas: MOCK_ETFS.filter((etf) => etf.listingRegion === "overseas").length,
     }),
     [],
   );
 
-  const filteredEtfs = useMemo(() => {
-    const normalizedKeyword = keyword.trim().toLowerCase();
-    return etfs.filter((etf) => {
-      const matchesMarket = matchesMarketFilter(etf, marketFilter);
-      const matchesKeyword =
-        !normalizedKeyword ||
-        [etf.ticker, etf.name, etf.market, etf.provider, etf.category].some((value) => value.toLowerCase().includes(normalizedKeyword));
-      return matchesMarket && matchesKeyword;
+  const suggestions = useMemo(() => {
+    const normalized = keyword.trim().toLowerCase();
+    if (!normalized) return [];
+    return MOCK_ETFS.filter((etf) => [etf.ticker, etf.name, etf.provider, etf.indexName, etf.strategy].join(" ").toLowerCase().includes(normalized));
+  }, [keyword]);
+
+  const query = useQuery({
+    queryKey: ["etf-search", debouncedKeyword, filters],
+    queryFn: () => etfMockApi.searchEtfs({ keyword: debouncedKeyword, filters, size: 60 }),
+  });
+
+  const updateFilter = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
+
+  const selectedChips = Object.entries(filters)
+    .filter(([, value]) => value !== "all")
+    .map(([key, value]) => filterOptions[key].find(([optionValue]) => optionValue === value)?.[1] || value);
+
+  const toggleCompare = (etf) => {
+    setCompareItems((current) => {
+      if (current.some((item) => item.ticker === etf.ticker)) return current.filter((item) => item.ticker !== etf.ticker);
+      if (current.length >= maxCompareItems) return current;
+      return [...current, etf];
     });
-  }, [keyword, marketFilter]);
+  };
+
+  const toggleWatch = (etf) => {
+    setWatchlist((current) => (current.includes(etf.ticker) ? current.filter((ticker) => ticker !== etf.ticker) : [...current, etf.ticker]));
+  };
+
+  const syncKeyword = (nextKeyword) => {
+    setKeyword(nextKeyword);
+    setSearchParams(nextKeyword ? { keyword: nextKeyword } : {});
+  };
+
+  const items = query.data?.data || [];
 
   return (
-    <section className="grid gap-5">
-      <Seo title="ETF 검색과 상세 정보" description="배당 ETF, 월배당 ETF, 성장 ETF의 배당률, 분배 주기, 장단점을 확인합니다." path="/etf" />
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="grid gap-5 pb-28 lg:pb-4">
+      <Seo title="ETF 검색" description="상장 국가, 자산 유형, 투자 목적, 분배 주기, 총보수 등을 기준으로 ETF를 검색합니다." path="/etf/search" />
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-wider text-emerald-700">ETF Directory</p>
-            <h2 className="mt-2 text-3xl font-black text-slate-950">ETF 검색</h2>
-            <p className="mt-2 text-sm font-bold text-slate-600">데이터 기준일: {DATA_AS_OF}. 국내/해외 ETF를 나눠 보고, 티커·이름·운용사로 검색할 수 있습니다.</p>
+            <p className="text-xs font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">ETF Search</p>
+            <h2 className="mt-2 text-3xl font-black text-slate-950 dark:text-white">ETF 검색</h2>
+            <p className="mt-2 text-sm font-bold text-slate-600 dark:text-slate-300">300ms debounce, 최근 검색어, 키보드 방향키/Enter 선택을 지원합니다.</p>
           </div>
-          <MarketSegmentedControl counts={counts} value={marketFilter} onChange={setMarketFilter} />
+          <MarketSegmentedControl counts={counts} value={filters.region} onChange={(value) => updateFilter("region", value)} />
         </div>
-        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-          <input
-            className="form-control"
-            placeholder="티커, ETF 이름, 운용사 검색"
+        <div className="mt-5">
+          <EtfSearchBox
+            suggestions={suggestions}
             value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
+            onChange={syncKeyword}
+            onSubmit={syncKeyword}
+            onSelect={(etf) => navigate(`/etf/${etf.slug}`)}
           />
-          <p className="text-sm font-black text-slate-500">검색 결과 {filteredEtfs.length}개</p>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {["assetType", "objective", "frequency", "management"].map((key) => (
+            <select className="form-control bg-slate-50 dark:bg-slate-800" key={key} value={filters[key]} onChange={(event) => updateFilter(key, event.target.value)}>
+              {filterOptions[key].map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          ))}
+        </div>
+        <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-wrap gap-2">
+            {selectedChips.length ? selectedChips.map((chip) => <span className="rounded-xl bg-cyan-50 px-3 py-2 text-xs font-black text-cyan-700" key={chip}>{chip}</span>) : <span className="text-sm font-bold text-slate-500">선택된 필터 없음</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-black text-slate-500">검색 결과 {query.data?.pagination?.totalItems ?? 0}개</span>
+            <button className={`rounded-xl px-3 py-2 text-xs font-black ${viewMode === "card" ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-700"}`} type="button" onClick={() => setViewMode("card")}>카드</button>
+            <button className={`rounded-xl px-3 py-2 text-xs font-black ${viewMode === "table" ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-700"}`} type="button" onClick={() => setViewMode("table")}>테이블</button>
+          </div>
         </div>
       </div>
-      <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-        {filteredEtfs.map((etf) => (
-          <Link className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md" key={etf.slug} to={`/etf/${etf.slug}`}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xl font-black text-slate-950">{etf.ticker}</p>
-                <h3 className="mt-1 font-black text-slate-800">{etf.name}</h3>
-              </div>
-              <div className="flex flex-col items-end gap-2">
-                <span className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700">{etf.category}</span>
-                <span className={["rounded-xl px-3 py-1 text-xs font-black", isDomesticEtf(etf) ? "bg-emerald-50 text-emerald-700" : "bg-cyan-50 text-cyan-700"].join(" ")}>
-                  {isDomesticEtf(etf) ? "국내" : "해외"}
-                </span>
-              </div>
-            </div>
-            <p className="mt-3 line-clamp-2 text-sm font-semibold leading-6 text-slate-600">{etf.summary}</p>
-            <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
-              <div className="rounded-xl bg-slate-50 p-3">
-                <p className="text-xs font-black text-slate-500">현재가</p>
-                <p className="mt-1 font-black text-slate-950">{formatMoney(etf.price, etf.currency)}</p>
-              </div>
-              <div className="rounded-xl bg-slate-50 p-3">
-                <p className="text-xs font-black text-slate-500">배당률</p>
-                <p className="mt-1 font-black text-emerald-700">{formatPercent(etf.dividendYield)}</p>
-              </div>
-              <div className="rounded-xl bg-slate-50 p-3">
-                <p className="text-xs font-black text-slate-500">주기</p>
-                <p className="mt-1 font-black text-slate-950">{etf.dividendFrequency}</p>
-              </div>
-            </div>
-          </Link>
-        ))}
-      </div>
-      {filteredEtfs.length === 0 && (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
-          <p className="text-lg font-black text-slate-950">검색 결과가 없습니다</p>
-          <p className="mt-2 text-sm font-bold text-slate-500">필터를 전체로 바꾸거나 다른 키워드로 검색해보세요.</p>
-        </div>
+
+      {query.isLoading && <SkeletonState rows={4} />}
+      {query.isError && <ErrorState error={query.error} onRetry={query.refetch} />}
+      {!query.isLoading && !query.isError && items.length === 0 && <EmptyState title="검색 결과가 없습니다" description="검색어 또는 필터 조건을 조정해보세요." />}
+      {!query.isLoading && !query.isError && items.length > 0 && (
+        <>
+          {viewMode === "table" && <EtfResultTable items={items} keyword={debouncedKeyword} compareItems={compareItems} onToggleCompare={toggleCompare} />}
+          <div className={viewMode === "table" ? "grid gap-3 lg:hidden" : "grid gap-3 lg:grid-cols-2 2xl:grid-cols-3"}>
+            {items.map((etf) => (
+              <EtfResultCard
+                compareSelected={compareItems.some((item) => item.ticker === etf.ticker)}
+                etf={etf}
+                key={etf.slug}
+                keyword={debouncedKeyword}
+                onToggleCompare={toggleCompare}
+                onToggleWatch={toggleWatch}
+                watchSelected={watchlist.includes(etf.ticker)}
+              />
+            ))}
+          </div>
+        </>
       )}
+
+      <CompareTray items={compareItems} maxItems={maxCompareItems} onClear={() => setCompareItems([])} onRemove={toggleCompare} />
     </section>
   );
 }

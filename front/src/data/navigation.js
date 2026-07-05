@@ -19,7 +19,8 @@ export const navigationGroups = [
   {
     label: "ETF",
     items: [
-      { label: "ETF 검색", path: "/etf" },
+      { label: "ETF 탐색", path: "/etf" },
+      { label: "ETF 검색", path: "/etf/search" },
       { label: "ETF 비교", path: "/etf/compare" },
       { label: "고배당 ETF 순위", path: "/etf/rankings/high-dividend" },
       { label: "월배당 ETF 순위", path: "/etf/rankings/monthly-dividend" },

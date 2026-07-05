@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify:etf": "node scripts/verify-etf-content.mjs"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.101.2",
     "axios": "^1.13.2",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
