@@ -43,6 +43,9 @@
   <url><loc>https://stockfolio.example.com/etf/compare/dia-vs-spy</loc></url>
   <url><loc>https://stockfolio.example.com/etf/compare/vti-vs-voo</loc></url>
   <url><loc>https://stockfolio.example.com/etf/compare/monthly-vs-quarterly-dividend</loc></url>
+  <url><loc>https://stockfolio.example.com/etf/compare/tiger-vs-ace-us-dividend</loc></url>
+  <url><loc>https://stockfolio.example.com/etf/compare/tiger-vs-kodex-us-dividend</loc></url>
+  <url><loc>https://stockfolio.example.com/etf/compare/ace-vs-kodex-us-dividend</loc></url>
   <url><loc>https://stockfolio.example.com/etf/rankings/high-dividend</loc></url>
   <url><loc>https://stockfolio.example.com/etf/rankings/monthly-dividend</loc></url>
   <url><loc>https://stockfolio.example.com/etf/rankings/dividend-growth</loc></url>

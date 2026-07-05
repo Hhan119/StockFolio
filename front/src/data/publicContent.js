@@ -528,6 +528,9 @@ export const comparisons = [
   ["dia-vs-spy", "DIA vs SPY", ["dia", "spy"], "다우 30 월분배와 S&P 500 분산 투자의 차이를 비교합니다."],
   ["vti-vs-voo", "VTI vs VOO", ["vti", "voo"], "미국 전체시장과 S&P 500 대형주 중심 투자를 비교합니다."],
   ["monthly-vs-quarterly-dividend", "월배당 ETF vs 분기배당 ETF", ["jepi", "schd"], "현금흐름 빈도와 장기 성장성의 균형을 비교합니다."],
+  ["tiger-vs-ace-us-dividend", "TIGER 미국배당다우존스 vs ACE 미국배당다우존스", ["tiger-us-dividend", "ace-us-dividend"], "국내 상장 미국 배당다우존스 ETF의 보수, 월분배, 거래 편의성을 비교합니다."],
+  ["tiger-vs-kodex-us-dividend", "TIGER 미국배당다우존스 vs KODEX 미국S&P500배당귀족", ["tiger-us-dividend", "kodex-us-dividend"], "국내 월분배 배당 성장 ETF와 배당귀족 ETF의 차이를 비교합니다."],
+  ["ace-vs-kodex-us-dividend", "ACE 미국배당다우존스 vs KODEX 미국S&P500배당귀족", ["ace-us-dividend", "kodex-us-dividend"], "국내 상장 해외 배당 ETF를 지수 성격과 분배 주기 관점에서 비교합니다."],
 ].map(([slug, title, etfSlugs, summary]) => ({ slug, title, etfSlugs, summary }));
 
 export const rankingPages = [
@@ -623,6 +626,22 @@ export const policyPages = {
 
 export const getEtf = (slugOrTicker) =>
   etfs.find((etf) => etf.slug === slugOrTicker?.toLowerCase() || etf.ticker.toLowerCase() === slugOrTicker?.toLowerCase());
+
+export const isDomesticEtf = (etf) => etf?.market === "KRX" || etf?.currency === "KRW";
+
+export const matchesMarketFilter = (etf, filter) => {
+  if (filter === "domestic") return isDomesticEtf(etf);
+  if (filter === "overseas") return !isDomesticEtf(etf);
+  return true;
+};
+
+export const getComparisonEtfs = (comparison) => comparison.etfSlugs.map(getEtf).filter(Boolean);
+
+export const comparisonMatchesMarketFilter = (comparison, filter) => {
+  if (filter === "all") return true;
+  const comparisonEtfs = getComparisonEtfs(comparison);
+  return comparisonEtfs.length > 0 && comparisonEtfs.every((etf) => matchesMarketFilter(etf, filter));
+};
 
 export const getComparison = (slug) => comparisons.find((comparison) => comparison.slug === slug);
 
