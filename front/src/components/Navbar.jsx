@@ -7,7 +7,10 @@ function Navbar() {
   const location = useLocation();
   const user = useAuthStore((state) => state.user);
   const logoutStore = useAuthStore((state) => state.logout);
-  const active = navigationGroups.flatMap((group) => group.items).find((item) => item.path === location.pathname);
+  const active = navigationGroups
+    .flatMap((group) => group.items)
+    .filter((item) => location.pathname === item.path || (item.path !== "/" && location.pathname.startsWith(`${item.path}/`)))
+    .sort((a, b) => b.path.length - a.path.length)[0];
 
   const logout = () => {
     logoutStore();
