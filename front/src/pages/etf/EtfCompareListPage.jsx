@@ -82,12 +82,12 @@ function EtfCompareListPage() {
             <p className="text-xs font-black text-slate-500">선택 ETF {tickers.length}/{maxItems}</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {tickers.map((ticker) => (
-                <button className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 shadow-sm dark:bg-slate-900 dark:text-slate-200" key={ticker} type="button" onClick={() => removeTicker(ticker)}>
+                <button className="btn-muted text-xs" key={ticker} type="button" onClick={() => removeTicker(ticker)}>
                   {ticker} ×
                 </button>
               ))}
             </div>
-            <button className="mt-3 rounded-xl bg-slate-950 px-4 py-2 text-xs font-black text-white dark:bg-white dark:text-slate-950" type="button" onClick={shareUrl}>비교 URL 복사</button>
+            <button className="btn-dark mt-3 text-xs" type="button" onClick={shareUrl}>비교 URL 복사</button>
           </div>
         </div>
       </div>
@@ -123,7 +123,7 @@ function EtfCompareListPage() {
               <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900" key={etf.ticker}>
                 <div className="flex items-start justify-between gap-3">
                   <div><p className="text-2xl font-black text-slate-950 dark:text-white">{etf.ticker}</p><p className="mt-1 text-sm font-bold text-slate-600 dark:text-slate-300">{etf.name}</p></div>
-                  <button className="rounded-xl bg-slate-100 px-3 py-1 text-xs font-black text-slate-600 dark:bg-slate-800 dark:text-slate-200" type="button" onClick={() => removeTicker(etf.ticker)}>제거</button>
+                  <button className="btn-muted text-xs" type="button" onClick={() => removeTicker(etf.ticker)}>제거</button>
                 </div>
                 <p className="mt-3 text-sm font-semibold leading-6 text-slate-600 dark:text-slate-300">{etf.strategy}</p>
               </article>

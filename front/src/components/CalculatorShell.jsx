@@ -77,7 +77,7 @@ function CalculatorShell({
               </label>
             ))}
           </div>
-          <button className="mt-4 w-full rounded-2xl bg-cyan-700 px-4 py-3 font-black text-white shadow-sm hover:bg-slate-950">
+          <button className="btn-secondary mt-4 min-h-12 w-full">
             계산하기
           </button>
           {error && <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-700">{error}</p>}
@@ -141,7 +141,7 @@ function CalculatorShell({
               <p className="text-xs font-black uppercase tracking-wider text-slate-500">관련 페이지</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {relatedLinks.map((link) => (
-                  <Link className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-black text-slate-700 hover:bg-slate-900 hover:text-white" key={link.to} to={link.to}>
+                  <Link className="btn-muted text-sm" key={link.to} to={link.to}>
                     {link.label}
                   </Link>
                 ))}

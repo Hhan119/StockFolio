@@ -103,9 +103,9 @@ function EtfDetailPage() {
           </div>
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
-          <button className="rounded-xl bg-white/10 px-4 py-3 text-sm font-black text-white hover:bg-white hover:text-slate-950" type="button">관심등록</button>
-          <Link className="rounded-xl bg-white/10 px-4 py-3 text-sm font-black text-white hover:bg-white hover:text-slate-950" to={`/etf/compare?tickers=${encodeURIComponent(etf.ticker)}`}>비교담기</Link>
-          <Link className="rounded-xl bg-cyan-400 px-4 py-3 text-sm font-black text-slate-950" to="/portfolio/my">포트폴리오 추가</Link>
+          <button className="btn-ghost-dark text-sm" type="button">관심등록</button>
+          <Link className="btn-ghost-dark text-sm" to={`/etf/compare?tickers=${encodeURIComponent(etf.ticker)}`}>비교담기</Link>
+          <Link className="btn-primary text-sm" to="/portfolio/my">포트폴리오 추가</Link>
         </div>
       </div>
 
@@ -122,7 +122,7 @@ function EtfDetailPage() {
 
       <div className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 no-scrollbar dark:border-slate-800 dark:bg-slate-900">
         {tabs.map(([key, label]) => (
-          <button className={`shrink-0 rounded-xl px-4 py-3 text-sm font-black ${activeTab === key ? "bg-slate-950 text-white dark:bg-white dark:text-slate-950" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`} key={key} type="button" onClick={() => setActiveTab(key)}>
+          <button className={`shrink-0 rounded-xl px-4 py-3 text-sm font-black ${activeTab === key ? "bg-cyan-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"}`} key={key} type="button" onClick={() => setActiveTab(key)}>
             {label}
           </button>
         ))}

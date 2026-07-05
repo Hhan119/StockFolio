@@ -18,7 +18,7 @@ export function ErrorState({ error, onRetry }) {
       <p className="text-lg font-black text-rose-900 dark:text-rose-100">데이터를 불러오지 못했습니다</p>
       <p className="mt-2 text-sm font-bold text-rose-700 dark:text-rose-200">{error?.message || "알 수 없는 오류가 발생했습니다."}</p>
       {onRetry && (
-        <button className="mt-4 rounded-xl bg-rose-700 px-4 py-2 text-sm font-black text-white" type="button" onClick={onRetry}>
+        <button className="btn-danger mt-4 text-sm" type="button" onClick={onRetry}>
           다시 시도
         </button>
       )}
@@ -195,7 +195,7 @@ export function EtfSearchBox({ suggestions = [], value, onChange, onSubmit, onSe
         <div className="mt-3 flex flex-wrap gap-2">
           <span className="text-xs font-black text-slate-500">최근 검색</span>
           {recentSearches.map((item) => (
-            <button className="rounded-xl bg-slate-100 px-3 py-1 text-xs font-black text-slate-700 hover:bg-slate-900 hover:text-white dark:bg-slate-800 dark:text-slate-200" key={item} type="button" onClick={() => onChange(item)}>
+            <button className="btn-muted text-xs" key={item} type="button" onClick={() => onChange(item)}>
               {item}
             </button>
           ))}
@@ -241,11 +241,11 @@ export function EtfResultCard({ etf, keyword = "", onToggleCompare, onToggleWatc
       </div>
       <DataFreshnessBadge metadata={etf.metadata} />
       <div className="mt-4 flex flex-wrap gap-2">
-        <Link className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-black text-white dark:bg-white dark:text-slate-950" to={`/etf/${etf.slug}`}>상세보기</Link>
-        <button className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-900 hover:text-white dark:bg-slate-800 dark:text-slate-200" type="button" onClick={() => onToggleCompare?.(etf)}>
+        <Link className="btn-dark text-sm" to={`/etf/${etf.slug}`}>상세보기</Link>
+        <button className="btn-muted text-sm" type="button" onClick={() => onToggleCompare?.(etf)}>
           {compareSelected ? "비교해제" : "비교담기"}
         </button>
-        <button className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-900 hover:text-white dark:bg-slate-800 dark:text-slate-200" type="button" onClick={() => onToggleWatch?.(etf)}>
+        <button className="btn-muted text-sm" type="button" onClick={() => onToggleWatch?.(etf)}>
           관심등록
         </button>
       </div>
@@ -292,7 +292,7 @@ export function EtfResultTable({ items, keyword = "", onToggleCompare, compareIt
                 </td>
                 <td className="p-4 text-xs font-bold text-slate-500">{etf.metadata.asOf}</td>
                 <td className="p-4">
-                  <button className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-950 hover:text-white dark:bg-slate-800 dark:text-slate-200" type="button" onClick={() => onToggleCompare?.(etf)}>
+                  <button className="btn-muted text-xs" type="button" onClick={() => onToggleCompare?.(etf)}>
                     {selected ? "비교해제" : "비교담기"}
                   </button>
                 </td>
@@ -315,15 +315,15 @@ export function CompareTray({ items, maxItems = 4, onRemove, onClear }) {
           <p className="text-xs font-black uppercase tracking-wider text-slate-500">비교담기 {items.length}/{maxItems}</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {items.map((item) => (
-              <button className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 dark:bg-slate-800 dark:text-slate-200" key={item.ticker} type="button" onClick={() => onRemove?.(item)}>
+              <button className="btn-muted text-xs" key={item.ticker} type="button" onClick={() => onRemove?.(item)}>
                 {item.ticker} ×
               </button>
             ))}
           </div>
         </div>
         <div className="flex gap-2">
-          <button className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-black text-slate-700 dark:bg-slate-800 dark:text-slate-200" type="button" onClick={onClear}>비우기</button>
-          <Link className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-black text-white dark:bg-white dark:text-slate-950" to={`/etf/compare?tickers=${encodeURIComponent(tickers)}`}>비교하기</Link>
+          <button className="btn-muted text-sm" type="button" onClick={onClear}>비우기</button>
+          <Link className="btn-dark text-sm" to={`/etf/compare?tickers=${encodeURIComponent(tickers)}`}>비교하기</Link>
         </div>
       </div>
     </div>

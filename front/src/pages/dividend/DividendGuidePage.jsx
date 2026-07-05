@@ -40,9 +40,9 @@ function DividendGuidePage() {
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h3 className="text-2xl font-black text-slate-950">함께 보면 좋은 페이지</h3>
         <div className="mt-3 flex flex-wrap gap-2">
-          <Link className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-black text-white" to="/calculators/etf-dividend">ETF 배당 계산기</Link>
-          <Link className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-black text-slate-700" to="/calculators/monthly-dividend">월배당 계산기</Link>
-          <Link className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-black text-slate-700" to="/etf/rankings/monthly-dividend">월배당 ETF 순위</Link>
+          <Link className="btn-dark text-sm" to="/calculators/etf-dividend">ETF 배당 계산기</Link>
+          <Link className="btn-muted text-sm" to="/calculators/monthly-dividend">월배당 계산기</Link>
+          <Link className="btn-muted text-sm" to="/etf/rankings/monthly-dividend">월배당 ETF 순위</Link>
         </div>
       </div>
     </article>

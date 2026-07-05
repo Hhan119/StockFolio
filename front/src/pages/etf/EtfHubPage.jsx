@@ -59,7 +59,7 @@ function EtfHubPage() {
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           {summary.popularKeywords.map((item) => (
-            <button className="rounded-xl bg-white/10 px-3 py-2 text-xs font-black text-white hover:bg-white hover:text-slate-950" key={item} type="button" onClick={() => goSearch(item)}>
+            <button className="btn-ghost-dark text-xs" key={item} type="button" onClick={() => goSearch(item)}>
               {item}
             </button>
           ))}
@@ -68,7 +68,7 @@ function EtfHubPage() {
 
       <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
         {summary.typeShortcuts.map((type) => (
-          <Link className="rounded-2xl border border-slate-200 bg-white p-4 text-sm font-black text-slate-800 shadow-sm hover:bg-slate-950 hover:text-white dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200" key={type} to={`/etf/search?keyword=${encodeURIComponent(type)}`}>
+          <Link className="rounded-2xl border border-slate-200 bg-white p-4 text-sm font-black text-slate-800 shadow-sm transition hover:border-cyan-200 hover:bg-cyan-50 hover:text-cyan-800 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-cyan-800 dark:hover:bg-cyan-950 dark:hover:text-cyan-100" key={type} to={`/etf/search?keyword=${encodeURIComponent(type)}`}>
             {type}
           </Link>
         ))}
@@ -109,14 +109,14 @@ function EtfHubPage() {
           <p className="mt-3 text-sm font-semibold leading-7 text-slate-600 dark:text-slate-300">
             ETF는 여러 자산을 하나의 상품처럼 거래할 수 있게 만든 펀드입니다. 분배금은 ETF가 보유한 자산에서 발생한 현금흐름을 투자자에게 나눠주는 개념이며, 매월 같은 금액이 보장되는 것은 아닙니다.
           </p>
-          <Link className="mt-4 inline-flex rounded-xl bg-slate-950 px-4 py-3 text-sm font-black text-white dark:bg-white dark:text-slate-950" to="/dividends/guide">배당금 기초 가이드</Link>
+          <Link className="btn-dark mt-4 text-sm" to="/dividends/guide">배당금 기초 가이드</Link>
         </article>
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <h3 className="text-2xl font-black text-slate-950 dark:text-white">관련 계산기</h3>
           <div className="mt-4 grid gap-2">
-            <Link className="rounded-xl bg-slate-50 px-4 py-3 text-sm font-black text-slate-700 hover:bg-slate-950 hover:text-white dark:bg-slate-800 dark:text-slate-200" to="/calculators/etf-dividend">ETF 분배금 계산기</Link>
-            <Link className="rounded-xl bg-slate-50 px-4 py-3 text-sm font-black text-slate-700 hover:bg-slate-950 hover:text-white dark:bg-slate-800 dark:text-slate-200" to="/calculators/monthly-dividend">월분배 계산기</Link>
-            <Link className="rounded-xl bg-slate-50 px-4 py-3 text-sm font-black text-slate-700 hover:bg-slate-950 hover:text-white dark:bg-slate-800 dark:text-slate-200" to="/calculators/dividend-reinvestment">분배금 재투자 계산기</Link>
+            <Link className="btn-muted text-sm" to="/calculators/etf-dividend">ETF 분배금 계산기</Link>
+            <Link className="btn-muted text-sm" to="/calculators/monthly-dividend">월분배 계산기</Link>
+            <Link className="btn-muted text-sm" to="/calculators/dividend-reinvestment">분배금 재투자 계산기</Link>
           </div>
         </article>
       </section>

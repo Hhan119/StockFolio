@@ -146,8 +146,8 @@ function EtfListPage() {
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm font-black text-slate-500">검색 결과 {query.data?.pagination?.totalItems ?? 0}개</span>
-            <button className={`rounded-xl px-3 py-2 text-xs font-black ${viewMode === "card" ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-700"}`} type="button" onClick={() => setViewMode("card")}>카드</button>
-            <button className={`rounded-xl px-3 py-2 text-xs font-black ${viewMode === "table" ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-700"}`} type="button" onClick={() => setViewMode("table")}>테이블</button>
+            <button className={`rounded-xl px-3 py-2 text-xs font-black transition ${viewMode === "card" ? "bg-cyan-600 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"}`} type="button" onClick={() => setViewMode("card")}>카드</button>
+            <button className={`rounded-xl px-3 py-2 text-xs font-black transition ${viewMode === "table" ? "bg-cyan-600 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"}`} type="button" onClick={() => setViewMode("table")}>테이블</button>
           </div>
         </div>
       </div>

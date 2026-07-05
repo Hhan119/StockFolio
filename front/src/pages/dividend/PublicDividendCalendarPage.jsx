@@ -38,7 +38,7 @@ function PublicDividendCalendarPage() {
             </div>
             <div className="mt-4 grid gap-2">
               {events.slice(0, 7).map((event) => (
-                <Link className="rounded-xl bg-slate-50 px-3 py-3 text-sm font-bold text-slate-700 hover:bg-slate-900 hover:text-white" key={`${month}-${event.ticker}`} to={`/etf/${event.slug}`}>
+                <Link className="rounded-xl bg-slate-50 px-3 py-3 text-sm font-bold text-slate-700 transition hover:bg-cyan-700 hover:text-white" key={`${month}-${event.ticker}`} to={`/etf/${event.slug}`}>
                   <span className="font-black">{event.ticker}</span> · {event.name}
                   <span className="mt-1 block text-xs opacity-80">예상 1회 분배금 {formatMoney(event.amount, event.currency)} · {event.frequency}</span>
                 </Link>

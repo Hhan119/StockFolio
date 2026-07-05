@@ -31,7 +31,7 @@ function BlogPostPage() {
           <h3 className="text-xl font-black text-slate-950">관련 계산기</h3>
           <div className="mt-3 flex flex-wrap gap-2">
             {post.relatedCalculators.map((to) => (
-              <Link className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-black text-white" key={to} to={to}>{to.split("/").pop()}</Link>
+              <Link className="btn-dark text-sm" key={to} to={to}>{to.split("/").pop()}</Link>
             ))}
           </div>
         </div>

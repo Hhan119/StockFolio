@@ -26,7 +26,7 @@ function EtfComparePage() {
         <p className="text-xs font-black uppercase tracking-wider text-cyan-300">ETF Compare</p>
         <h2 className="mt-2 text-4xl font-black">{comparison.title}</h2>
         <p className="mt-3 max-w-3xl text-sm font-semibold leading-7 text-slate-300">{comparison.summary}</p>
-        <Link className="mt-4 inline-flex rounded-xl bg-cyan-400 px-4 py-3 text-sm font-black text-slate-950" to={`/etf/compare?tickers=${comparison.etfs.map((etf) => etf.ticker).join(",")}`}>
+        <Link className="btn-primary mt-4 text-sm" to={`/etf/compare?tickers=${comparison.etfs.map((etf) => etf.ticker).join(",")}`}>
           비교 도구에서 열기
         </Link>
       </div>
