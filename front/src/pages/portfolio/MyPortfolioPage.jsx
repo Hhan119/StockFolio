@@ -49,6 +49,7 @@ function MyPortfolioPage() {
   const [detail, setDetail] = useState(null);
   const [dividendSummary, setDividendSummary] = useState(null);
   const [marketFilter, setMarketFilter] = useState("ALL");
+  const [searchMarket, setSearchMarket] = useState("ALL");
   const [keyword, setKeyword] = useState("");
   const [results, setResults] = useState([]);
   const [modalStock, setModalStock] = useState(null);
@@ -107,7 +108,7 @@ function MyPortfolioPage() {
     setMessage("");
     setError("");
     try {
-      const data = await stockService.search(keyword.trim());
+      const data = await stockService.search(keyword.trim(), searchMarket);
       setResults(data);
       if (!data.length) setMessage("검색 결과가 없습니다. 종목명 또는 티커로 다시 검색해보세요.");
     } catch {
@@ -272,11 +273,29 @@ function MyPortfolioPage() {
         <main className="grid gap-4">
           <section className="rounded-2xl border border-slate-700/80 bg-slate-900 p-3 shadow-sm sm:p-4">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <h3 className="font-black text-white">종목 검색</h3>
-              <span className="text-xs font-bold text-slate-500">종목명 또는 티커</span>
+              <div>
+                <h3 className="font-black text-white">종목 검색</h3>
+                <p className="mt-1 text-xs font-bold text-slate-500">국내 주식은 KRX Open API, 해외 주식은 FMP 기준으로 우선 조회합니다.</p>
+              </div>
+              <div className="grid grid-cols-3 rounded-2xl bg-slate-950 p-1 text-xs font-black">
+                {[["ALL", "전체"], ["KR", "국내"], ["US", "해외"]].map(([value, label]) => (
+                  <button
+                    className={`rounded-xl px-3 py-2 transition ${searchMarket === value ? "bg-cyan-500 text-slate-950" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}
+                    key={value}
+                    type="button"
+                    onClick={() => {
+                      setSearchMarket(value);
+                      setResults([]);
+                      setMessage("");
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
             <form className="grid gap-2 sm:grid-cols-[1fr_auto]" onSubmit={search}>
-              <input className="form-control min-h-10 border-slate-800 bg-slate-950 py-2 text-white" placeholder="삼성전자, 005930, AAPL" value={keyword} onChange={(event) => setKeyword(event.target.value)} />
+              <input className="form-control min-h-10 border-slate-800 bg-slate-950 py-2 text-white" placeholder={searchMarket === "KR" ? "삼성전자, 005930, SK하이닉스" : searchMarket === "US" ? "AAPL, SCHD, Tesla" : "삼성전자, 005930, AAPL"} value={keyword} onChange={(event) => setKeyword(event.target.value)} />
               <button className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-black text-slate-950 shadow-sm hover:bg-cyan-300" disabled={loading}>{loading ? "검색 중" : "검색"}</button>
             </form>
 
