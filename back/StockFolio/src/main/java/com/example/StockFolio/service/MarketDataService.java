@@ -130,8 +130,8 @@ public class MarketDataService {
     private List<MarketDto.SearchResult> searchExternal(String market, String keyword) {
         if ("KR".equals(market)) {
             List<MarketDto.SearchResult> krx = searchKrxOpenApi(keyword);
-            if (!krx.isEmpty()) return krx;
-            return List.of();
+            if (!krx.isEmpty()) return krx.stream().map(this::freshenKrSearchResult).toList();
+            return searchNaverFinance(keyword);
         }
 
         List<MarketDto.SearchResult> fmp = searchFmp(keyword);
@@ -143,7 +143,10 @@ public class MarketDataService {
         if ("KR".equals(market)) {
             MarketDto.Quote krx = quoteKrxOpenApi(ticker);
             if (isUsableQuote(krx)) return enrichWithOpenDart(krx);
-            if (hasKisCredentials()) return quoteKis(ticker);
+            if (hasKisCredentials()) {
+                MarketDto.Quote kis = quoteKis(ticker);
+                if (isUsableQuote(kis)) return kis;
+            }
             MarketDto.Quote naver = quoteNaverFinance(ticker);
             if (isUsableQuote(naver)) return enrichWithOpenDart(naver);
             return null;
@@ -300,6 +303,52 @@ public class MarketDataService {
         return new MarketDto.SearchResult("KR", ticker, name, "KRW", exchange, decimal(text(row, "TDD_CLSPRC")), false, etf ? "krx-openapi-etf" : "krx-openapi");
     }
 
+    private List<MarketDto.SearchResult> searchNaverFinance(String keyword) {
+        if (!hasText(keyword)) return List.of();
+        try {
+            JsonNode items = restClientBuilder.build()
+                    .get()
+                    .uri("https://ac.stock.naver.com/ac?q={keyword}&target=stock,ipo,index,marketindicator", keyword)
+                    .header(HttpHeaders.USER_AGENT, "Mozilla/5.0")
+                    .header(HttpHeaders.REFERER, "https://finance.naver.com/")
+                    .retrieve()
+                    .body(JsonNode.class)
+                    .path("items");
+            if (!items.isArray()) return List.of();
+
+            List<MarketDto.SearchResult> results = new ArrayList<>();
+            for (JsonNode item : items) {
+                if (results.size() >= 30) break;
+                if (!"stock".equalsIgnoreCase(text(item, "category"))) continue;
+                String typeCode = text(item, "typeCode").toUpperCase();
+                if (!List.of("KOSPI", "KOSDAQ", "KONEX").contains(typeCode)) continue;
+
+                String ticker = firstNonBlank(text(item, "code"), text(item, "reutersCode")).toUpperCase();
+                String name = text(item, "name");
+                if (!hasText(ticker) || !hasText(name)) continue;
+
+                MarketDto.Quote quote = quoteNaverFinance(ticker);
+                BigDecimal price = isUsableQuote(quote) ? quote.currentPrice() : BigDecimal.ZERO;
+                boolean dividendAvailable = quote != null
+                        && quote.dividendYield() != null
+                        && quote.dividendYield().compareTo(BigDecimal.ZERO) > 0;
+                results.add(new MarketDto.SearchResult(
+                        "KR",
+                        ticker,
+                        name,
+                        "KRW",
+                        firstNonBlank(text(item, "typeName"), "KRX"),
+                        price,
+                        dividendAvailable,
+                        isUsableQuote(quote) ? quote.source() : "naver-finance-search"
+                ));
+            }
+            return results;
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
+
     private MarketDto.Quote enrichWithOpenDart(MarketDto.Quote quote) {
         if (!"KR".equals(quote.market())) return quote;
         OpenDartCorp corp = findOpenDartCorp(quote.ticker());
@@ -440,11 +489,13 @@ public class MarketDataService {
     }
 
     private MarketDto.Quote quoteNaverFinance(String ticker) {
-        if (!hasText(ticker) || !ticker.matches("\\d{6}")) return null;
+        if (!isKrTicker(ticker)) return null;
         try {
             JsonNode response = restClientBuilder.build()
                     .get()
                     .uri("https://polling.finance.naver.com/api/realtime?query=SERVICE_ITEM:{ticker}", ticker)
+                    .header(HttpHeaders.USER_AGENT, "Mozilla/5.0")
+                    .header(HttpHeaders.REFERER, "https://finance.naver.com/")
                     .retrieve()
                     .body(JsonNode.class);
             JsonNode item = response
@@ -524,7 +575,7 @@ public class MarketDataService {
                 .filter(item -> item.ticker().toLowerCase().contains(lower)
                         || item.name().toLowerCase().contains(lower)
                         || (!alias.isBlank() && item.name().toLowerCase().contains(alias)))
-                .map(this::freshenFallbackSearchResult)
+                .map(this::freshenKrSearchResult)
                 .limit(30)
                 .toList();
     }
@@ -542,7 +593,7 @@ public class MarketDataService {
                 .orElse(new MarketDto.Quote(market, ticker, ticker, "KR".equals(market) ? "KRW" : "USD", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, "-", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, "fallback"));
     }
 
-    private MarketDto.SearchResult freshenFallbackSearchResult(MarketDto.SearchResult item) {
+    private MarketDto.SearchResult freshenKrSearchResult(MarketDto.SearchResult item) {
         if (!"KR".equals(item.market())) return item;
         MarketDto.Quote quote = quoteNaverFinance(item.ticker());
         if (!isUsableQuote(quote)) return item;
@@ -620,7 +671,11 @@ public class MarketDataService {
     }
 
     private String inferMarket(String ticker) {
-        return ticker != null && ticker.matches("\\d{6}") ? "KR" : "US";
+        return isKrTicker(ticker) ? "KR" : "US";
+    }
+
+    private boolean isKrTicker(String ticker) {
+        return hasText(ticker) && ticker.trim().toUpperCase().matches("\\d{5}[0-9A-Z]");
     }
 
     private JsonNode getJson(String uri, Object... uriVariables) {
