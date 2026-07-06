@@ -84,15 +84,15 @@ public class MarketDataService {
 
         try {
             List<MarketDto.SearchResult> external = searchExternal(normalizedMarket, normalizedKeyword);
-            if (!external.isEmpty()) return external;
+            if (!external.isEmpty()) return enrichSearchPrices(external);
 
             String json = runPython("search", normalizedMarket, normalizedKeyword);
             List<MarketDto.SearchResult> python = objectMapper.readValue(json, new TypeReference<>() {});
-            if (!python.isEmpty()) return python;
+            if (!python.isEmpty()) return enrichSearchPrices(python);
         } catch (Exception ignored) {
             // Fall through to local fallback data.
         }
-        return fallbackSearch(normalizedMarket, normalizedKeyword);
+        return enrichSearchPrices(fallbackSearch(normalizedMarket, normalizedKeyword));
     }
 
     public MarketDto.Quote quote(String market, String ticker) {
@@ -137,6 +137,34 @@ public class MarketDataService {
         List<MarketDto.SearchResult> fmp = searchFmp(keyword);
         if (!fmp.isEmpty()) return fmp;
         return searchFinnhub(keyword);
+    }
+
+    private List<MarketDto.SearchResult> enrichSearchPrices(List<MarketDto.SearchResult> results) {
+        return results.stream()
+                .map(this::enrichSearchPrice)
+                .toList();
+    }
+
+    private MarketDto.SearchResult enrichSearchPrice(MarketDto.SearchResult result) {
+        if (result == null || !hasText(result.ticker())) return result;
+        if (result.currentPrice() != null && result.currentPrice().compareTo(BigDecimal.ZERO) > 0) return result;
+
+        try {
+            MarketDto.Quote quote = quote(result.market(), result.ticker());
+            if (!isUsableQuote(quote)) return result;
+            return new MarketDto.SearchResult(
+                    result.market(),
+                    result.ticker(),
+                    firstNonBlank(result.name(), quote.name(), result.ticker()),
+                    firstNonBlank(result.currency(), quote.currency(), "KR".equals(result.market()) ? "KRW" : "USD"),
+                    result.exchange(),
+                    quote.currentPrice(),
+                    quote.dividendYield() != null && quote.dividendYield().compareTo(BigDecimal.ZERO) > 0,
+                    quote.source()
+            );
+        } catch (Exception ignored) {
+            return result;
+        }
     }
 
     private MarketDto.Quote quoteExternal(String market, String ticker) {
@@ -311,13 +339,7 @@ public class MarketDataService {
     private List<MarketDto.SearchResult> searchNaverFinance(String keyword) {
         if (!hasText(keyword)) return List.of();
         try {
-            JsonNode items = restClientBuilder.build()
-                    .get()
-                    .uri("https://ac.stock.naver.com/ac?q={keyword}&target=stock,ipo,index,marketindicator", keyword)
-                    .header(HttpHeaders.USER_AGENT, "Mozilla/5.0")
-                    .header(HttpHeaders.REFERER, "https://finance.naver.com/")
-                    .retrieve()
-                    .body(JsonNode.class)
+            JsonNode items = getNaverJson("https://ac.stock.naver.com/ac?q={keyword}&target=stock,ipo,index,marketindicator", keyword)
                     .path("items");
             if (!items.isArray()) return List.of();
 
@@ -544,13 +566,7 @@ public class MarketDataService {
     private MarketDto.Quote quoteNaverFinance(String ticker) {
         if (!isKrTicker(ticker)) return null;
         try {
-            JsonNode response = restClientBuilder.build()
-                    .get()
-                    .uri("https://polling.finance.naver.com/api/realtime?query=SERVICE_ITEM:{ticker}", ticker)
-                    .header(HttpHeaders.USER_AGENT, "Mozilla/5.0")
-                    .header(HttpHeaders.REFERER, "https://finance.naver.com/")
-                    .retrieve()
-                    .body(JsonNode.class);
+            JsonNode response = getNaverJson("https://polling.finance.naver.com/api/realtime?query=SERVICE_ITEM:{ticker}", ticker);
             JsonNode item = response
                     .path("result")
                     .path("areas")
@@ -587,6 +603,18 @@ public class MarketDataService {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private JsonNode getNaverJson(String uri, Object... uriVariables) throws Exception {
+        String body = restClientBuilder.build()
+                .get()
+                .uri(uri, uriVariables)
+                .header(HttpHeaders.USER_AGENT, "Mozilla/5.0")
+                .header(HttpHeaders.REFERER, "https://finance.naver.com/")
+                .header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE + ", text/plain, */*")
+                .retrieve()
+                .body(String.class);
+        return objectMapper.readTree(body);
     }
 
     private String kisToken() {

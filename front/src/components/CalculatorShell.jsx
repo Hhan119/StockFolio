@@ -22,7 +22,8 @@ function CalculatorShell({
   const [error, setError] = useState("");
 
   const onChange = (name, value) => {
-    setValues((current) => ({ ...current, [name]: Number(value) }));
+    const normalized = value.replace(/,/g, "").replace(/[^\d.-]/g, "");
+    setValues((current) => ({ ...current, [name]: normalized === "" || normalized === "-" ? 0 : Number(normalized) }));
   };
 
   const calculate = async (event) => {
@@ -70,8 +71,9 @@ function CalculatorShell({
                   min={field.min ?? 0}
                   name={field.name}
                   step={field.step ?? 1}
-                  type="number"
-                  value={values[field.name]}
+                  type="text"
+                  inputMode="decimal"
+                  value={formatInputValue(values[field.name])}
                   onChange={(event) => onChange(field.name, event.target.value)}
                 />
               </label>
@@ -155,6 +157,18 @@ function CalculatorShell({
       </div>
     </section>
   );
+}
+
+function formatInputValue(value) {
+  if (value === "" || value === null || value === undefined) return "";
+  const number = Number(value);
+  if (Number.isNaN(number)) return "";
+
+  const [integer, decimal] = String(value).split(".");
+  const sign = integer.startsWith("-") ? "-" : "";
+  const unsignedInteger = integer.replace("-", "");
+  const formattedInteger = Number(unsignedInteger || 0).toLocaleString("ko-KR");
+  return `${sign}${formattedInteger}${decimal !== undefined ? `.${decimal}` : ""}`;
 }
 
 export default CalculatorShell;
