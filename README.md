@@ -72,7 +72,39 @@ Copy-Item .env.local-server.example .env.local-server
 - `JWT_SECRET`
 - `DOMAIN_URL`
 - `FRONTEND_URL`
-- 필요한 경우 `FINANCIAL_API_KEY`, `FINNHUB_API_KEY`, `KIS_APP_KEY`, `KIS_APP_SECRET`
+- 필요한 경우 `FMP_API_KEY`, `KRX_API_KEY`, `OPENDART_API_KEY`, `FINNHUB_API_KEY`, `KIS_APP_KEY`, `KIS_APP_SECRET`
+
+## 금융 데이터 공급자 우선순위
+
+StockFolio의 주식·ETF 정보는 백엔드에서만 외부 API를 호출합니다. 프론트엔드는 `/api/stocks/*`, `/api/market/*`만 호출합니다.
+
+우선순위:
+
+1. `FMP`  
+   미국 주식, 미국 ETF, 배당, 재무, ETF 구성 정보의 1순위 공급자입니다. `FMP_API_KEY`가 있으면 해외 종목 검색과 현재가 조회에 먼저 사용합니다.
+2. `KRX Open API`  
+   국내 전체 종목과 국내 ETF 공식 정보의 1순위 공급자입니다. `KRX_API_KEY`가 있으면 국내 종목 검색과 현재가 조회에 먼저 사용합니다.
+3. `OpenDART`  
+   국내 기업 공시·재무 정보 보강용 공급자입니다. `OPENDART_API_KEY`가 있으면 국내 종목의 공시 고유번호와 회사명 메타데이터를 보강합니다.
+
+Fallback:
+
+- 해외: FMP 실패 또는 키 없음 → Finnhub → yfinance 스크립트 → 로컬 fallback 데이터
+- 국내: KRX Open API 실패 또는 키 없음 → 한국투자증권 Open API → pykrx 스크립트 → 로컬 fallback 데이터
+
+환경변수:
+
+```env
+FMP_API_KEY=
+FMP_BASE_URL=https://financialmodelingprep.com/stable
+KRX_API_KEY=
+KRX_BASE_URL=https://data-dbg.krx.co.kr/svc/apis
+OPENDART_API_KEY=
+OPENDART_BASE_URL=https://opendart.fss.or.kr/api
+FINNHUB_API_KEY=
+KIS_APP_KEY=
+KIS_APP_SECRET=
+```
 
 4. 전체 서비스를 실행합니다.
 

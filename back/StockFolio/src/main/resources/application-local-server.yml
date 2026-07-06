@@ -37,6 +37,15 @@ app:
       client-secret: ${GOOGLE_CLIENT_SECRET:}
 
 external:
+  fmp:
+    api-key: ${FMP_API_KEY:${FINANCIAL_API_KEY:}}
+    base-url: ${FMP_BASE_URL:https://financialmodelingprep.com/stable}
+  krx:
+    api-key: ${KRX_API_KEY:}
+    base-url: ${KRX_BASE_URL:https://data-dbg.krx.co.kr/svc/apis}
+  opendart:
+    api-key: ${OPENDART_API_KEY:}
+    base-url: ${OPENDART_BASE_URL:https://opendart.fss.or.kr/api}
   finnhub:
     api-key: ${FINANCIAL_API_KEY:${FINNHUB_API_KEY:}}
   kis:

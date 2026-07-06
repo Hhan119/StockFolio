@@ -35,7 +35,8 @@ public class StockController {
 
     @GetMapping("/stocks/search")
     public List<MarketDto.SearchResult> search(@org.springframework.web.bind.annotation.RequestParam String keyword) {
-        String market = keyword != null && keyword.matches(".*[가-힣].*") ? "KR" : "US";
+        String normalized = keyword == null ? "" : keyword.trim();
+        String market = normalized.matches("\\d{6}") || normalized.matches(".*[가-힣].*") ? "KR" : "US";
         return marketDataService.search(market, keyword);
     }
 

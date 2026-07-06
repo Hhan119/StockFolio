@@ -10,23 +10,54 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
 
+import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
+import java.time.DayOfWeek;
 import java.time.Duration;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.zip.ZipInputStream;
 
 @Service
 @RequiredArgsConstructor
 public class MarketDataService {
 
+    private static final DateTimeFormatter KRX_DATE_FORMAT = DateTimeFormatter.BASIC_ISO_DATE;
+
     private final ObjectMapper objectMapper;
     private final RestClient.Builder restClientBuilder;
+
+    @Value("${external.fmp.api-key:}")
+    private String fmpApiKey;
+
+    @Value("${external.fmp.base-url:https://financialmodelingprep.com/stable}")
+    private String fmpBaseUrl;
+
+    @Value("${external.krx.api-key:}")
+    private String krxApiKey;
+
+    @Value("${external.krx.base-url:https://data-dbg.krx.co.kr/svc/apis}")
+    private String krxBaseUrl;
+
+    @Value("${external.opendart.api-key:}")
+    private String openDartApiKey;
+
+    @Value("${external.opendart.base-url:https://opendart.fss.or.kr/api}")
+    private String openDartBaseUrl;
 
     @Value("${external.finnhub.api-key:}")
     private String finnhubApiKey;
@@ -41,6 +72,7 @@ public class MarketDataService {
     private String kisBaseUrl;
 
     private String kisAccessToken;
+    private volatile Map<String, OpenDartCorp> openDartCorpCache = Map.of();
 
     public List<MarketDto.SearchResult> search(String market, String keyword) {
         String normalizedMarket = normalizeMarket(market);
@@ -66,11 +98,11 @@ public class MarketDataService {
 
         try {
             MarketDto.Quote external = quoteExternal(normalizedMarket, normalizedTicker);
-            if (external != null && external.currentPrice().compareTo(BigDecimal.ZERO) > 0) return external;
+            if (isUsableQuote(external)) return external;
 
             String json = runPython("quote", normalizedMarket, normalizedTicker);
             MarketDto.Quote python = objectMapper.readValue(json, MarketDto.Quote.class);
-            if (python.currentPrice().compareTo(BigDecimal.ZERO) > 0) return python;
+            if (isUsableQuote(python)) return python;
         } catch (Exception ignored) {
             // Fall through to local fallback data.
         }
@@ -93,36 +125,263 @@ public class MarketDataService {
     }
 
     private List<MarketDto.SearchResult> searchExternal(String market, String keyword) {
-        if ("US".equals(market) && !finnhubApiKey.isBlank()) {
-            try {
-                FinnhubSearchResponse response = restClientBuilder.build()
-                        .get()
-                        .uri("https://finnhub.io/api/v1/search?q={keyword}&token={token}", keyword, finnhubApiKey)
-                        .retrieve()
-                        .body(FinnhubSearchResponse.class);
-
-                if (response == null || response.result() == null) return List.of();
-
-                return response.result().stream()
-                        .filter(item -> item.symbol() != null && !item.symbol().contains("."))
-                        .limit(40)
-                        .map(item -> {
-                            MarketDto.Quote quote = quoteExternal("US", item.symbol());
-                            BigDecimal price = quote != null ? quote.currentPrice() : BigDecimal.ZERO;
-                            return new MarketDto.SearchResult("US", item.symbol(), item.description(), "USD", item.type(), price, true);
-                        })
-                        .toList();
-            } catch (Exception ignored) {
-                return List.of();
-            }
+        if ("KR".equals(market)) {
+            List<MarketDto.SearchResult> krx = searchKrxOpenApi(keyword);
+            if (!krx.isEmpty()) return krx;
+            return List.of();
         }
-        return List.of();
+
+        List<MarketDto.SearchResult> fmp = searchFmp(keyword);
+        if (!fmp.isEmpty()) return fmp;
+        return searchFinnhub(keyword);
     }
 
     private MarketDto.Quote quoteExternal(String market, String ticker) {
-        if ("KR".equals(market) && hasKisCredentials()) return quoteKis(ticker);
-        if ("US".equals(market) && !finnhubApiKey.isBlank()) return quoteFinnhub(ticker);
+        if ("KR".equals(market)) {
+            MarketDto.Quote krx = quoteKrxOpenApi(ticker);
+            if (isUsableQuote(krx)) return enrichWithOpenDart(krx);
+            if (hasKisCredentials()) return quoteKis(ticker);
+            return null;
+        }
+
+        MarketDto.Quote fmp = quoteFmp(ticker);
+        if (isUsableQuote(fmp)) return fmp;
+        if (hasText(finnhubApiKey)) return quoteFinnhub(ticker);
         return null;
+    }
+
+    private List<MarketDto.SearchResult> searchFmp(String keyword) {
+        if (!hasText(fmpApiKey)) return List.of();
+        try {
+            JsonNode rows = getJson(fmpBaseUrl + "/search-name?query={keyword}&apikey={apiKey}", keyword, fmpApiKey);
+            if (!rows.isArray() || rows.isEmpty()) {
+                rows = getJson(fmpBaseUrl + "/search-symbol?query={keyword}&apikey={apiKey}", keyword, fmpApiKey);
+            }
+            if (!rows.isArray()) return List.of();
+
+            List<MarketDto.SearchResult> results = new ArrayList<>();
+            for (JsonNode row : rows) {
+                if (results.size() >= 20) break;
+                String symbol = text(row, "symbol").toUpperCase();
+                if (!hasText(symbol) || symbol.contains(".")) continue;
+                String name = firstNonBlank(text(row, "name"), text(row, "companyName"), symbol);
+                String currency = firstNonBlank(text(row, "currency"), "USD");
+                String exchange = firstNonBlank(text(row, "exchangeShortName"), text(row, "stockExchange"), "US");
+                MarketDto.Quote quote = quoteFmp(symbol);
+                BigDecimal price = quote != null ? quote.currentPrice() : BigDecimal.ZERO;
+                boolean dividendAvailable = quote != null && quote.dividendYield() != null && quote.dividendYield().compareTo(BigDecimal.ZERO) > 0;
+                results.add(new MarketDto.SearchResult("US", symbol, name, currency, exchange, price, dividendAvailable, "fmp"));
+            }
+            return results;
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
+
+    private MarketDto.Quote quoteFmp(String ticker) {
+        if (!hasText(fmpApiKey)) return null;
+        try {
+            JsonNode quote = firstArrayItem(getJson(fmpBaseUrl + "/quote?symbol={ticker}&apikey={apiKey}", ticker, fmpApiKey));
+            if (quote == null) return null;
+
+            JsonNode profile = firstArrayItem(getJson(fmpBaseUrl + "/profile?symbol={ticker}&apikey={apiKey}", ticker, fmpApiKey));
+            String name = firstNonBlank(text(quote, "name"), text(profile, "companyName"), ticker);
+            String currency = firstNonBlank(text(profile, "currency"), text(quote, "currency"), "USD");
+            BigDecimal current = decimal(firstNonBlank(text(quote, "price"), text(quote, "currentPrice")));
+            BigDecimal previous = decimal(firstNonBlank(text(quote, "previousClose"), text(quote, "previousClosePrice")));
+            if (previous.compareTo(BigDecimal.ZERO) == 0) previous = current;
+            BigDecimal changeRate = decimal(text(quote, "changesPercentage"));
+            if (changeRate.compareTo(BigDecimal.ZERO) == 0) changeRate = percentChange(current, previous);
+            BigDecimal lastDividend = decimal(text(profile, "lastDiv"));
+            BigDecimal dividendYield = current.compareTo(BigDecimal.ZERO) > 0
+                    ? lastDividend.divide(current, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
+                    : BigDecimal.ZERO;
+
+            return new MarketDto.Quote(
+                    "US",
+                    ticker,
+                    name,
+                    currency,
+                    current,
+                    previous,
+                    changeRate,
+                    compactCurrency(decimal(firstNonBlank(text(quote, "marketCap"), text(profile, "mktCap"))), currency),
+                    decimal(text(quote, "pe")),
+                    BigDecimal.ZERO,
+                    dividendYield,
+                    "fmp"
+            );
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private List<MarketDto.SearchResult> searchKrxOpenApi(String keyword) {
+        if (!hasText(krxApiKey)) return List.of();
+        try {
+            Map<String, MarketDto.SearchResult> byTicker = new LinkedHashMap<>();
+            for (JsonNode row : fetchKrxRows("/sto/stk_bydd_trd")) {
+                MarketDto.SearchResult result = toKrxSearchResult(row, keyword, false);
+                if (result != null) byTicker.putIfAbsent(result.ticker(), result);
+            }
+            for (JsonNode row : fetchKrxRows("/etp/etf_bydd_trd")) {
+                MarketDto.SearchResult result = toKrxSearchResult(row, keyword, true);
+                if (result != null) byTicker.putIfAbsent(result.ticker(), result);
+            }
+            return byTicker.values().stream().limit(40).toList();
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
+
+    private MarketDto.Quote quoteKrxOpenApi(String ticker) {
+        if (!hasText(krxApiKey)) return null;
+        try {
+            for (String path : List.of("/sto/stk_bydd_trd", "/etp/etf_bydd_trd")) {
+                boolean etf = path.contains("/etp/");
+                for (JsonNode row : fetchKrxRows(path)) {
+                    String rowTicker = firstNonBlank(text(row, "ISU_SRT_CD"), text(row, "ISU_CD")).toUpperCase();
+                    if (!ticker.equalsIgnoreCase(rowTicker)) continue;
+
+                    BigDecimal current = decimal(text(row, "TDD_CLSPRC"));
+                    BigDecimal changePrice = decimal(text(row, "CMPPREVDD_PRC"));
+                    BigDecimal previous = current.subtract(changePrice);
+                    if (previous.compareTo(BigDecimal.ZERO) <= 0) previous = current;
+                    BigDecimal changeRate = decimal(text(row, "FLUC_RT"));
+                    String name = firstNonBlank(text(row, "ISU_ABBRV"), text(row, "ISU_NM"), ticker);
+
+                    return new MarketDto.Quote(
+                            "KR",
+                            ticker,
+                            name,
+                            "KRW",
+                            current,
+                            previous,
+                            changeRate,
+                            formatKrwMarketCap(decimal(text(row, "MKTCAP"))),
+                            BigDecimal.ZERO,
+                            BigDecimal.ZERO,
+                            defaultDividendYield(ticker),
+                            etf ? "krx-openapi-etf" : "krx-openapi"
+                    );
+                }
+            }
+        } catch (Exception ignored) {
+            return null;
+        }
+        return null;
+    }
+
+    private List<JsonNode> fetchKrxRows(String path) {
+        JsonNode response = restClientBuilder.build()
+                .get()
+                .uri(krxBaseUrl + path + "?basDd={baseDate}", latestKrxBusinessDate())
+                .header("AUTH_KEY", krxApiKey)
+                .retrieve()
+                .body(JsonNode.class);
+        JsonNode rows = firstArrayField(response, "OutBlock_1", "output", "list");
+        if (rows == null) return List.of();
+
+        List<JsonNode> result = new ArrayList<>();
+        rows.forEach(result::add);
+        return result;
+    }
+
+    private MarketDto.SearchResult toKrxSearchResult(JsonNode row, String keyword, boolean etf) {
+        String ticker = firstNonBlank(text(row, "ISU_SRT_CD"), text(row, "ISU_CD")).toUpperCase();
+        String name = firstNonBlank(text(row, "ISU_ABBRV"), text(row, "ISU_NM"), ticker);
+        if (!hasText(ticker) || !matchesKeyword(ticker, name, keyword)) return null;
+        String exchange = etf ? "KRX ETF" : firstNonBlank(text(row, "MKT_NM"), "KRX");
+        return new MarketDto.SearchResult("KR", ticker, name, "KRW", exchange, decimal(text(row, "TDD_CLSPRC")), false, etf ? "krx-openapi-etf" : "krx-openapi");
+    }
+
+    private MarketDto.Quote enrichWithOpenDart(MarketDto.Quote quote) {
+        if (!"KR".equals(quote.market())) return quote;
+        OpenDartCorp corp = findOpenDartCorp(quote.ticker());
+        if (corp == null) return quote;
+        String name = hasText(quote.name()) && !quote.name().equals(quote.ticker()) ? quote.name() : corp.corpName();
+        return new MarketDto.Quote(
+                quote.market(),
+                quote.ticker(),
+                name,
+                quote.currency(),
+                quote.currentPrice(),
+                quote.previousClose(),
+                quote.changeRate(),
+                quote.marketCap(),
+                quote.per(),
+                quote.pbr(),
+                quote.dividendYield(),
+                quote.source() + "+opendart"
+        );
+    }
+
+    private OpenDartCorp findOpenDartCorp(String ticker) {
+        if (!hasText(openDartApiKey) || !hasText(ticker) || !ticker.matches("\\d{6}")) return null;
+        Map<String, OpenDartCorp> cache = openDartCorpCache;
+        if (cache.isEmpty()) {
+            synchronized (this) {
+                if (openDartCorpCache.isEmpty()) openDartCorpCache = loadOpenDartCorpCodes();
+                cache = openDartCorpCache;
+            }
+        }
+        return cache.get(ticker);
+    }
+
+    private Map<String, OpenDartCorp> loadOpenDartCorpCodes() {
+        try {
+            byte[] payload = restClientBuilder.build()
+                    .get()
+                    .uri(openDartBaseUrl + "/corpCode.xml?crtfc_key={apiKey}", openDartApiKey)
+                    .retrieve()
+                    .body(byte[].class);
+            if (payload == null || payload.length == 0) return Map.of();
+
+            Map<String, OpenDartCorp> corps = new HashMap<>();
+            try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(payload))) {
+                if (zip.getNextEntry() == null) return Map.of();
+                var document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(zip);
+                NodeList nodes = document.getElementsByTagName("list");
+                for (int i = 0; i < nodes.getLength(); i++) {
+                    Element element = (Element) nodes.item(i);
+                    String stockCode = xmlText(element, "stock_code");
+                    if (!stockCode.matches("\\d{6}")) continue;
+                    corps.put(stockCode, new OpenDartCorp(
+                            xmlText(element, "corp_code"),
+                            xmlText(element, "corp_name"),
+                            stockCode
+                    ));
+                }
+            }
+            return corps;
+        } catch (Exception ignored) {
+            return Map.of();
+        }
+    }
+
+    private List<MarketDto.SearchResult> searchFinnhub(String keyword) {
+        if (!hasText(finnhubApiKey)) return List.of();
+        try {
+            FinnhubSearchResponse response = restClientBuilder.build()
+                    .get()
+                    .uri("https://finnhub.io/api/v1/search?q={keyword}&token={token}", keyword, finnhubApiKey)
+                    .retrieve()
+                    .body(FinnhubSearchResponse.class);
+
+            if (response == null || response.result() == null) return List.of();
+
+            return response.result().stream()
+                    .filter(item -> item.symbol() != null && !item.symbol().contains("."))
+                    .limit(30)
+                    .map(item -> {
+                        MarketDto.Quote quote = quoteFinnhub(item.symbol());
+                        BigDecimal price = quote != null ? quote.currentPrice() : BigDecimal.ZERO;
+                        return new MarketDto.SearchResult("US", item.symbol(), item.description(), "USD", item.type(), price, true, "finnhub");
+                    })
+                    .toList();
+        } catch (Exception ignored) {
+            return List.of();
+        }
     }
 
     private MarketDto.Quote quoteFinnhub(String ticker) {
@@ -156,7 +415,7 @@ public class MarketDataService {
 
             BigDecimal current = decimal(output.path("stck_prpr").asText());
             BigDecimal previous = decimal(output.path("stck_sdpr").asText());
-            return new MarketDto.Quote(
+            return enrichWithOpenDart(new MarketDto.Quote(
                     "KR",
                     ticker,
                     displayName(ticker),
@@ -169,7 +428,7 @@ public class MarketDataService {
                     decimal(output.path("pbr").asText()),
                     defaultDividendYield(ticker),
                     "kis"
-            );
+            ));
         } catch (Exception ignored) {
             return null;
         }
@@ -263,15 +522,19 @@ public class MarketDataService {
     }
 
     private MarketDto.SearchResult kr(String ticker, String name, double price, boolean dividend) {
-        return new MarketDto.SearchResult("KR", ticker, name, "KRW", "KRX", BigDecimal.valueOf(price), dividend);
+        return new MarketDto.SearchResult("KR", ticker, name, "KRW", "KRX", BigDecimal.valueOf(price), dividend, "fallback");
     }
 
     private MarketDto.SearchResult us(String ticker, String name, double price, boolean dividend) {
-        return new MarketDto.SearchResult("US", ticker, name, "USD", "US", BigDecimal.valueOf(price), dividend);
+        return new MarketDto.SearchResult("US", ticker, name, "USD", "US", BigDecimal.valueOf(price), dividend, "fallback");
     }
 
     private boolean hasKisCredentials() {
-        return !kisAppKey.isBlank() && !kisAppSecret.isBlank();
+        return hasText(kisAppKey) && hasText(kisAppSecret);
+    }
+
+    private boolean isUsableQuote(MarketDto.Quote quote) {
+        return quote != null && quote.currentPrice() != null && quote.currentPrice().compareTo(BigDecimal.ZERO) > 0;
     }
 
     private String normalizeMarket(String market) {
@@ -282,10 +545,62 @@ public class MarketDataService {
         return ticker != null && ticker.matches("\\d{6}") ? "KR" : "US";
     }
 
+    private JsonNode getJson(String uri, Object... uriVariables) {
+        return restClientBuilder.build().get().uri(uri, uriVariables).retrieve().body(JsonNode.class);
+    }
+
+    private JsonNode firstArrayItem(JsonNode node) {
+        return node != null && node.isArray() && !node.isEmpty() ? node.get(0) : null;
+    }
+
+    private JsonNode firstArrayField(JsonNode node, String... fieldNames) {
+        if (node == null) return null;
+        for (String fieldName : fieldNames) {
+            JsonNode field = node.path(fieldName);
+            if (field.isArray()) return field;
+        }
+        return node.isArray() ? node : null;
+    }
+
+    private String text(JsonNode node, String fieldName) {
+        if (node == null || fieldName == null) return "";
+        return node.path(fieldName).asText("").trim();
+    }
+
+    private String xmlText(Element element, String tagName) {
+        NodeList nodes = element.getElementsByTagName(tagName);
+        if (nodes.getLength() == 0) return "";
+        return nodes.item(0).getTextContent().trim();
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (hasText(value)) return value.trim();
+        }
+        return "";
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private boolean matchesKeyword(String ticker, String name, String keyword) {
+        String normalized = keyword == null ? "" : keyword.toLowerCase();
+        return ticker.toLowerCase().contains(normalized) || name.toLowerCase().contains(normalized);
+    }
+
+    private String latestKrxBusinessDate() {
+        LocalDate date = LocalDate.now();
+        while (date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY) {
+            date = date.minusDays(1);
+        }
+        return date.format(KRX_DATE_FORMAT);
+    }
+
     private BigDecimal decimal(String value) {
         try {
             if (value == null || value.isBlank()) return BigDecimal.ZERO;
-            return new BigDecimal(value.trim().replace(",", "")).setScale(2, RoundingMode.HALF_UP);
+            return new BigDecimal(value.trim().replace(",", "").replace("%", "").replace("+", "")).setScale(2, RoundingMode.HALF_UP);
         } catch (Exception ignored) {
             return BigDecimal.ZERO;
         }
@@ -294,6 +609,26 @@ public class MarketDataService {
     private BigDecimal percentChange(BigDecimal current, BigDecimal previous) {
         if (previous == null || previous.compareTo(BigDecimal.ZERO) == 0) return BigDecimal.ZERO;
         return current.subtract(previous).divide(previous, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
+    }
+
+    private String compactCurrency(BigDecimal value, String currency) {
+        if (value == null || value.compareTo(BigDecimal.ZERO) <= 0) return "-";
+        BigDecimal trillion = BigDecimal.valueOf(1_000_000_000_000L);
+        BigDecimal billion = BigDecimal.valueOf(1_000_000_000L);
+        BigDecimal million = BigDecimal.valueOf(1_000_000L);
+        if (value.compareTo(trillion) >= 0) return currency + " " + value.divide(trillion, 2, RoundingMode.HALF_UP) + "T";
+        if (value.compareTo(billion) >= 0) return currency + " " + value.divide(billion, 2, RoundingMode.HALF_UP) + "B";
+        if (value.compareTo(million) >= 0) return currency + " " + value.divide(million, 2, RoundingMode.HALF_UP) + "M";
+        return currency + " " + value.setScale(0, RoundingMode.HALF_UP);
+    }
+
+    private String formatKrwMarketCap(BigDecimal value) {
+        if (value == null || value.compareTo(BigDecimal.ZERO) <= 0) return "-";
+        BigDecimal jo = BigDecimal.valueOf(1_000_000_000_000L);
+        BigDecimal eok = BigDecimal.valueOf(100_000_000L);
+        if (value.compareTo(jo) >= 0) return value.divide(jo, 1, RoundingMode.HALF_UP) + "조";
+        if (value.compareTo(eok) >= 0) return value.divide(eok, 0, RoundingMode.HALF_UP) + "억";
+        return value.setScale(0, RoundingMode.HALF_UP).toPlainString();
     }
 
     private String koreanAlias(String keyword) {
@@ -308,6 +643,8 @@ public class MarketDataService {
     }
 
     private String displayName(String ticker) {
+        OpenDartCorp corp = findOpenDartCorp(ticker);
+        if (corp != null && hasText(corp.corpName())) return corp.corpName();
         return fallbackUniverse().stream()
                 .filter(item -> item.ticker().equalsIgnoreCase(ticker))
                 .map(MarketDto.SearchResult::name)
@@ -336,6 +673,7 @@ public class MarketDataService {
         };
     }
 
+    private record OpenDartCorp(String corpCode, String corpName, String stockCode) {}
     private record FinnhubSearchResponse(List<FinnhubSymbol> result) {}
     private record FinnhubSymbol(String symbol, String description, String type) {}
     private record FinnhubQuoteResponse(BigDecimal c, BigDecimal pc) {}

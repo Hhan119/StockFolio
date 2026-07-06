@@ -11,7 +11,8 @@ public class MarketDto {
             String currency,
             String exchange,
             BigDecimal currentPrice,
-            Boolean dividendAvailable
+            Boolean dividendAvailable,
+            String source
     ) {}
 
     public record Quote(
