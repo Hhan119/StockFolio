@@ -71,6 +71,9 @@ public class MarketDataService {
     @Value("${external.kis.base-url:https://openapi.koreainvestment.com:9443}")
     private String kisBaseUrl;
 
+    @Value("${external.python.bin:${PYTHON_BIN:python}}")
+    private String pythonBin;
+
     private String kisAccessToken;
     private volatile Map<String, OpenDartCorp> openDartCorpCache = Map.of();
 
@@ -141,6 +144,8 @@ public class MarketDataService {
             MarketDto.Quote krx = quoteKrxOpenApi(ticker);
             if (isUsableQuote(krx)) return enrichWithOpenDart(krx);
             if (hasKisCredentials()) return quoteKis(ticker);
+            MarketDto.Quote naver = quoteNaverFinance(ticker);
+            if (isUsableQuote(naver)) return enrichWithOpenDart(naver);
             return null;
         }
 
@@ -434,6 +439,52 @@ public class MarketDataService {
         }
     }
 
+    private MarketDto.Quote quoteNaverFinance(String ticker) {
+        if (!hasText(ticker) || !ticker.matches("\\d{6}")) return null;
+        try {
+            JsonNode response = restClientBuilder.build()
+                    .get()
+                    .uri("https://polling.finance.naver.com/api/realtime?query=SERVICE_ITEM:{ticker}", ticker)
+                    .retrieve()
+                    .body(JsonNode.class);
+            JsonNode item = response
+                    .path("result")
+                    .path("areas")
+                    .path(0)
+                    .path("datas")
+                    .path(0);
+            if (item.isMissingNode() || !hasText(text(item, "cd"))) return null;
+
+            BigDecimal current = decimal(text(item, "nv"));
+            BigDecimal previous = decimal(text(item, "pcv"));
+            if (previous.compareTo(BigDecimal.ZERO) == 0) previous = current;
+            BigDecimal dividend = decimal(text(item, "dv"));
+            BigDecimal eps = decimal(text(item, "eps"));
+            BigDecimal bps = decimal(text(item, "bps"));
+            BigDecimal listedStockCount = decimal(text(item, "countOfListedStock"));
+            BigDecimal marketCap = current.multiply(listedStockCount);
+
+            return new MarketDto.Quote(
+                    "KR",
+                    ticker,
+                    firstNonBlank(text(item, "nm"), displayName(ticker)),
+                    "KRW",
+                    current,
+                    previous,
+                    signedNaverRate(item),
+                    formatKrwMarketCap(marketCap),
+                    ratio(current, eps),
+                    ratio(current, bps),
+                    current.compareTo(BigDecimal.ZERO) > 0
+                            ? dividend.divide(current, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
+                            : BigDecimal.ZERO,
+                    "naver-finance"
+            );
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
     private String kisToken() {
         if (kisAccessToken != null && !kisAccessToken.isBlank()) return kisAccessToken;
 
@@ -449,7 +500,7 @@ public class MarketDataService {
     }
 
     private String runPython(String action, String market, String value) throws Exception {
-        ProcessBuilder builder = new ProcessBuilder("python", "scripts/market_data.py", action, market, value);
+        ProcessBuilder builder = new ProcessBuilder(pythonBin, "scripts/market_data.py", action, market, value);
         builder.directory(new java.io.File("."));
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -473,17 +524,38 @@ public class MarketDataService {
                 .filter(item -> item.ticker().toLowerCase().contains(lower)
                         || item.name().toLowerCase().contains(lower)
                         || (!alias.isBlank() && item.name().toLowerCase().contains(alias)))
+                .map(this::freshenFallbackSearchResult)
                 .limit(30)
                 .toList();
     }
 
     private MarketDto.Quote fallbackQuote(String market, String ticker) {
+        if ("KR".equals(market)) {
+            MarketDto.Quote naver = quoteNaverFinance(ticker);
+            if (isUsableQuote(naver)) return enrichWithOpenDart(naver);
+        }
         return fallbackUniverse().stream()
                 .filter(item -> item.market().equals(market))
                 .filter(item -> item.ticker().equalsIgnoreCase(ticker))
                 .findFirst()
                 .map(item -> new MarketDto.Quote(item.market(), item.ticker(), item.name(), item.currency(), item.currentPrice(), item.currentPrice(), BigDecimal.ZERO, defaultMarketCap(item.ticker()), defaultPer(item.ticker()), defaultPbr(item.ticker()), defaultDividendYield(item.ticker()), "fallback"))
                 .orElse(new MarketDto.Quote(market, ticker, ticker, "KR".equals(market) ? "KRW" : "USD", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, "-", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, "fallback"));
+    }
+
+    private MarketDto.SearchResult freshenFallbackSearchResult(MarketDto.SearchResult item) {
+        if (!"KR".equals(item.market())) return item;
+        MarketDto.Quote quote = quoteNaverFinance(item.ticker());
+        if (!isUsableQuote(quote)) return item;
+        return new MarketDto.SearchResult(
+                item.market(),
+                item.ticker(),
+                firstNonBlank(quote.name(), item.name()),
+                item.currency(),
+                item.exchange(),
+                quote.currentPrice(),
+                quote.dividendYield() != null && quote.dividendYield().compareTo(BigDecimal.ZERO) > 0,
+                quote.source()
+        );
     }
 
     private List<MarketDto.SearchResult> fallbackUniverse() {
@@ -503,6 +575,12 @@ public class MarketDataService {
                 kr("055550", "신한지주", 48000, true),
                 kr("096770", "SK이노베이션", 116000, true),
                 kr("207940", "삼성바이오로직스", 780000, false),
+                kr("000150", "두산", 0, true),
+                kr("000155", "두산우", 0, true),
+                kr("034020", "두산에너빌리티", 0, true),
+                kr("241560", "두산밥캣", 0, true),
+                kr("336260", "두산퓨얼셀", 0, false),
+                kr("454910", "두산로보틱스", 0, false),
                 us("AAPL", "Apple Inc.", 195, true),
                 us("MSFT", "Microsoft Corp.", 440, true),
                 us("NVDA", "NVIDIA Corp.", 120, true),
@@ -609,6 +687,20 @@ public class MarketDataService {
     private BigDecimal percentChange(BigDecimal current, BigDecimal previous) {
         if (previous == null || previous.compareTo(BigDecimal.ZERO) == 0) return BigDecimal.ZERO;
         return current.subtract(previous).divide(previous, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
+    }
+
+    private BigDecimal signedNaverRate(JsonNode item) {
+        BigDecimal rate = decimal(text(item, "cr"));
+        String changeType = text(item, "rf");
+        if ("4".equals(changeType) || "5".equals(changeType) || "6".equals(changeType)) {
+            return rate.abs().negate();
+        }
+        return rate;
+    }
+
+    private BigDecimal ratio(BigDecimal numerator, BigDecimal denominator) {
+        if (numerator == null || denominator == null || denominator.compareTo(BigDecimal.ZERO) == 0) return BigDecimal.ZERO;
+        return numerator.divide(denominator, 2, RoundingMode.HALF_UP);
     }
 
     private String compactCurrency(BigDecimal value, String currency) {

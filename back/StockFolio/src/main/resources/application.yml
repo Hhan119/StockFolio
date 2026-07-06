@@ -49,3 +49,5 @@ external:
   kis:
     app-key: ${KIS_APP_KEY:}
     app-secret: ${KIS_APP_SECRET:}
+  python:
+    bin: ${PYTHON_BIN:python}
