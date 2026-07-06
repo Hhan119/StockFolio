@@ -17,7 +17,7 @@ const defaultDividend = (stock) => {
 };
 
 function isKoreanStock(stock) {
-  return stock.currency === "KRW" || /^\d{6}$/.test(stock.ticker || "") || stock.market === "KR";
+  return stock.currency === "KRW" || /^\d{5}[0-9A-Z]$/i.test(stock.ticker || "") || stock.market === "KR";
 }
 
 function buildPie(stocks = []) {

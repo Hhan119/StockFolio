@@ -22,15 +22,18 @@ public class PortfolioService {
 
     private final PortfolioRepository portfolioRepository;
     private final UserRepository userRepository;
+    private final MarketDataService marketDataService;
 
     public List<PortfolioDto.Summary> getAllPortfolios(Long userId) {
         return portfolioRepository.findByUserIdOrderByUpdatedAtDesc(userId)
                 .stream().map(this::toSummary).collect(Collectors.toList());
     }
 
+    @Transactional
     public PortfolioDto.Response getPortfolio(Long id, Long userId) {
         Portfolio p = portfolioRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new EntityNotFoundException("포트폴리오를 찾을 수 없습니다: " + id));
+        p.getStocks().forEach(this::refreshStockCurrentPrice);
         return toResponse(p);
     }
 
@@ -114,5 +117,28 @@ public class PortfolioService {
                 .currency(s.getCurrency()).memo(s.getMemo())
                 .createdAt(s.getCreatedAt()).updatedAt(s.getUpdatedAt())
                 .build();
+    }
+
+    public void refreshStockCurrentPrice(Stock stock) {
+        try {
+            MarketDto.Quote quote = marketDataService.quote(inferMarket(stock), stock.getTicker());
+            if (quote == null || quote.currentPrice() == null || quote.currentPrice().compareTo(BigDecimal.ZERO) <= 0) {
+                return;
+            }
+
+            stock.setCurrentPrice(quote.currentPrice());
+            if (quote.currency() != null && !quote.currency().isBlank()) stock.setCurrency(quote.currency());
+            if (quote.name() != null && !quote.name().isBlank() && !quote.name().equalsIgnoreCase(stock.getTicker())) {
+                stock.setName(quote.name());
+            }
+        } catch (Exception ignored) {
+            // Keep the saved price when the external quote provider is temporarily unavailable.
+        }
+    }
+
+    private String inferMarket(Stock stock) {
+        String ticker = stock.getTicker() == null ? "" : stock.getTicker().trim().toUpperCase();
+        if ("KRW".equalsIgnoreCase(stock.getCurrency()) || ticker.matches("\\d{5}[0-9A-Z]")) return "KR";
+        return "US";
     }
 }

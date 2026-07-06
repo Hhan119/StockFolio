@@ -24,9 +24,11 @@ public class StockService {
     private final PortfolioRepository portfolioRepository;
     private final PortfolioService portfolioService;
 
+    @Transactional
     public List<StockDto.Response> getStocks(Long portfolioId, Long userId) {
         return stockRepository.findByPortfolioIdAndUserId(portfolioId, userId)
                 .stream()
+                .peek(portfolioService::refreshStockCurrentPrice)
                 .map(portfolioService::toStockResponse)
                 .collect(Collectors.toList());
     }

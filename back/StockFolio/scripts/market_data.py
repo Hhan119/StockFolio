@@ -37,14 +37,32 @@ def search_kr(keyword):
     return results
 
 
+def find_close_column(frame):
+    for column in ["\uc885\uac00", "Close", "close"]:
+        if column in frame.columns:
+            return column
+    return frame.columns[3] if len(frame.columns) > 3 else frame.columns[-1]
+
+
 def quote_kr(ticker):
     from pykrx import stock
 
     end = datetime.now()
     start = end - timedelta(days=14)
     frame = stock.get_market_ohlcv_by_date(start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), ticker)
-    close_column = "종가" if "종가" in frame.columns else frame.columns[-1]
-    close = frame[close_column].dropna()
+    if frame.empty:
+        return {
+            "market": "KR",
+            "ticker": ticker,
+            "name": stock.get_market_ticker_name(ticker),
+            "currency": "KRW",
+            "currentPrice": 0,
+            "previousClose": 0,
+            "changeRate": 0,
+            "source": "pykrx",
+        }
+
+    close = frame[find_close_column(frame)].dropna()
     current = as_float(close.iloc[-1]) if len(close) else 0
     previous = as_float(close.iloc[-2]) if len(close) > 1 else current
     name = stock.get_market_ticker_name(ticker)

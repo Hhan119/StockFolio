@@ -141,20 +141,25 @@ public class MarketDataService {
 
     private MarketDto.Quote quoteExternal(String market, String ticker) {
         if ("KR".equals(market)) {
-            MarketDto.Quote krx = quoteKrxOpenApi(ticker);
-            if (isUsableQuote(krx)) return enrichWithOpenDart(krx);
             if (hasKisCredentials()) {
                 MarketDto.Quote kis = quoteKis(ticker);
                 if (isUsableQuote(kis)) return kis;
             }
             MarketDto.Quote naver = quoteNaverFinance(ticker);
             if (isUsableQuote(naver)) return enrichWithOpenDart(naver);
+            MarketDto.Quote krx = quoteKrxOpenApi(ticker);
+            if (isUsableQuote(krx)) return enrichWithOpenDart(krx);
             return null;
         }
 
         MarketDto.Quote fmp = quoteFmp(ticker);
         if (isUsableQuote(fmp)) return fmp;
-        if (hasText(finnhubApiKey)) return quoteFinnhub(ticker);
+        if (hasText(finnhubApiKey)) {
+            MarketDto.Quote finnhub = quoteFinnhub(ticker);
+            if (isUsableQuote(finnhub)) return finnhub;
+        }
+        MarketDto.Quote yahoo = quoteYahooFinance(ticker);
+        if (isUsableQuote(yahoo)) return yahoo;
         return null;
     }
 
@@ -449,6 +454,54 @@ public class MarketDataService {
             BigDecimal current = response.c();
             BigDecimal previous = response.pc() != null ? response.pc() : current;
             return new MarketDto.Quote("US", ticker, ticker, "USD", current, previous, percentChange(current, previous), "-", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, "finnhub");
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private MarketDto.Quote quoteYahooFinance(String ticker) {
+        if (!hasText(ticker)) return null;
+        try {
+            JsonNode response = restClientBuilder.build()
+                    .get()
+                    .uri("https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=5d&interval=1d", ticker)
+                    .header(HttpHeaders.USER_AGENT, "Mozilla/5.0")
+                    .retrieve()
+                    .body(JsonNode.class);
+            JsonNode result = firstArrayItem(response.path("chart").path("result"));
+            if (result == null) return null;
+
+            JsonNode meta = result.path("meta");
+            BigDecimal current = decimal(firstNonBlank(
+                    text(meta, "regularMarketPrice"),
+                    text(meta, "postMarketPrice"),
+                    text(meta, "previousClose")
+            ));
+            if (current.compareTo(BigDecimal.ZERO) <= 0) return null;
+
+            BigDecimal previous = decimal(firstNonBlank(
+                    text(meta, "chartPreviousClose"),
+                    text(meta, "previousClose"),
+                    text(meta, "regularMarketPreviousClose")
+            ));
+            if (previous.compareTo(BigDecimal.ZERO) == 0) previous = current;
+
+            String symbol = firstNonBlank(text(meta, "symbol"), ticker).toUpperCase();
+            String currency = firstNonBlank(text(meta, "currency"), "USD");
+            return new MarketDto.Quote(
+                    "US",
+                    symbol,
+                    symbol,
+                    currency,
+                    current,
+                    previous,
+                    percentChange(current, previous),
+                    "-",
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    "yahoo-finance"
+            );
         } catch (Exception ignored) {
             return null;
         }
