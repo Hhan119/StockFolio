@@ -22,8 +22,8 @@ function HomePage() {
           개인 포트폴리오는 로그인 후 관리하고, 공개 영역은 백엔드 장애와 분리해 안정적으로 볼 수 있게 구성했습니다.
         </p>
         <div className="mt-5 flex flex-wrap gap-2">
-          <Link className="btn-primary text-sm" to="/calculators/etf-dividend">계산기 시작</Link>
-          <Link className="btn-ghost-dark text-sm" to="/etf">ETF 둘러보기</Link>
+          <Link className="btn-muted text-sm" to="/calculators/etf-dividend">계산기 시작</Link>
+          <Link className="btn-muted text-sm" to="/etf">ETF 둘러보기</Link>
         </div>
       </div>
 
@@ -51,13 +51,13 @@ function HomePage() {
           <p className="text-xs font-black uppercase tracking-wider text-cyan-700">Compare</p>
           <h3 className="mt-2 text-2xl font-black text-slate-950">ETF 비교 {comparisons.length}개</h3>
           <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">단순 수치 비교보다 투자 목적에 따라 어떤 차이가 중요한지 설명합니다.</p>
-          <Link className="btn-dark mt-4 text-sm" to="/etf/compare">비교 목록 보기</Link>
+          <Link className="btn-muted mt-4 text-sm" to="/etf/compare">비교 목록 보기</Link>
         </article>
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <p className="text-xs font-black uppercase tracking-wider text-rose-700">Guide</p>
           <h3 className="mt-2 text-2xl font-black text-slate-950">블로그 글 {blogPosts.length}개</h3>
           <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">배당률, 월배당, FIRE, 세금, 리밸런싱 같은 기초 주제를 공개 콘텐츠로 제공합니다.</p>
-          <Link className="btn-dark mt-4 text-sm" to="/blog">블로그 보기</Link>
+          <Link className="btn-muted mt-4 text-sm" to="/blog">블로그 보기</Link>
         </article>
       </div>
 
@@ -71,7 +71,7 @@ function HomePage() {
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {rankingPages.map((ranking) => (
-            <Link className="rounded-xl bg-slate-50 p-4 text-sm font-black text-slate-800 transition hover:bg-cyan-700 hover:text-white" key={ranking.slug} to={`/etf/rankings/${ranking.slug}`}>
+            <Link className="rounded-xl bg-slate-100 p-4 text-sm font-black text-slate-700 transition hover:bg-slate-950 hover:text-white" key={ranking.slug} to={`/etf/rankings/${ranking.slug}`}>
               {ranking.title}
             </Link>
           ))}
