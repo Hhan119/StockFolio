@@ -71,7 +71,7 @@ function HomePage() {
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {rankingPages.map((ranking) => (
-            <Link className="rounded-xl bg-slate-100 p-4 text-sm font-black text-slate-700 transition hover:bg-slate-950 hover:text-white" key={ranking.slug} to={`/etf/rankings/${ranking.slug}`}>
+            <Link className="btn-muted min-h-14 text-sm" key={ranking.slug} to={`/etf/rankings/${ranking.slug}`}>
               {ranking.title}
             </Link>
           ))}
