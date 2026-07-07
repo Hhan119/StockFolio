@@ -68,8 +68,8 @@ function MonthlyDividendCalendar() {
             <strong className="mt-2 block text-2xl font-black">{formatMoney(item.estimatedTotal)}</strong>
             <div className="mt-3 grid gap-1 text-xs font-bold text-slate-500">
               {(item.items || []).slice(0, 3).map((dividend) => (
-                <p className="flex justify-between" key={dividend.id}>
-                  <span>{dividend.stockTicker}</span>
+                <p className="flex justify-between gap-3" key={dividend.id}>
+                  <span className="min-w-0 truncate">{dividend.stockName || dividend.name || dividend.stock?.name || dividend.stockTicker}</span>
                   <span>{formatMoney(dividend.totalDividend)}</span>
                 </p>
               ))}
