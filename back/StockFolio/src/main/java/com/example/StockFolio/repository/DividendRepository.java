@@ -13,6 +13,8 @@ public interface DividendRepository extends JpaRepository<Dividend, Long> {
 
     List<Dividend> findByStockIdOrderByPaymentDateDesc(Long stockId);
 
+    boolean existsByStockId(Long stockId);
+
     @Query("SELECT d FROM Dividend d JOIN d.stock s WHERE s.portfolio.id = :portfolioId AND s.portfolio.user.id = :userId")
     List<Dividend> findByPortfolioIdAndUserId(Long portfolioId, Long userId);
 

@@ -10,6 +10,12 @@ export const portfolioService = {
   create(payload) {
     return api.post("/api/portfolios", payload).then((response) => response.data);
   },
+  update(id, payload) {
+    return api.put(`/api/portfolios/${id}`, payload).then((response) => response.data);
+  },
+  remove(id) {
+    return api.delete(`/api/portfolios/${id}`);
+  },
   addStock(payload) {
     return api.post("/api/portfolio/stocks", payload).then((response) => response.data);
   },

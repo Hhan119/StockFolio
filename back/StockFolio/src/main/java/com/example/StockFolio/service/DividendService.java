@@ -1,7 +1,9 @@
 package com.example.StockFolio.service;
 
 import com.example.StockFolio.dto.DividendDto;
+import com.example.StockFolio.dto.MarketDto;
 import com.example.StockFolio.entity.Dividend;
+import com.example.StockFolio.entity.Dividend.DividendFrequency;
 import com.example.StockFolio.entity.Stock;
 import com.example.StockFolio.repository.DividendRepository;
 import com.example.StockFolio.repository.StockRepository;
@@ -24,6 +26,7 @@ public class DividendService {
 
     private final DividendRepository dividendRepository;
     private final StockRepository stockRepository;
+    private final MarketDataService marketDataService;
 
     public List<DividendDto.Response> getByPortfolio(Long portfolioId, Long userId) {
         return dividendRepository.findByPortfolioIdAndUserId(portfolioId, userId)
@@ -45,6 +48,32 @@ public class DividendService {
                 .paymentDate(request.getPaymentDate())
                 .paymentMonth(resolvePaymentMonth(request))
                 .memo(request.getMemo())
+                .build();
+        return toResponse(dividendRepository.save(dividend));
+    }
+
+    @Transactional
+    public DividendDto.Response addAutoDividendIfAvailable(Long stockId, Long userId) {
+        if (dividendRepository.existsByStockId(stockId)) {
+            return null;
+        }
+
+        Stock stock = stockRepository.findByIdAndUserId(stockId, userId)
+                .orElseThrow(() -> new EntityNotFoundException("Stock not found: " + stockId));
+        AutoDividendEstimate estimate = estimateDividend(stock);
+        if (!estimate.available()) {
+            return null;
+        }
+
+        Dividend dividend = Dividend.builder()
+                .stock(stock)
+                .frequency(estimate.frequency())
+                .dividendPerShare(estimate.dividendPerShare())
+                .amountReceived(estimate.dividendPerShare()
+                        .multiply(BigDecimal.valueOf(stock.getQuantity()))
+                        .setScale(2, RoundingMode.HALF_UP))
+                .paymentMonth(estimate.paymentMonth())
+                .memo("자동 배당 추정: " + estimate.source())
                 .build();
         return toResponse(dividendRepository.save(dividend));
     }
@@ -166,5 +195,112 @@ public class DividendService {
             case SEMI_ANNUAL -> Math.floorMod(month - startMonth, 6) == 0;
             case ANNUAL, SPECIAL -> month == startMonth;
         };
+    }
+
+    private AutoDividendEstimate estimateDividend(Stock stock) {
+        String market = inferMarket(stock);
+        String ticker = stock.getTicker() == null ? "" : stock.getTicker().trim().toUpperCase();
+        String name = stock.getName() == null ? "" : stock.getName();
+
+        MarketDto.Quote quote = marketDataService.quote(market, ticker);
+        BigDecimal dividendYield = quote != null && quote.dividendYield() != null ? quote.dividendYield() : BigDecimal.ZERO;
+        BigDecimal dividendPerShare = knownDividendPerShare(ticker);
+        boolean hasKnownDividend = dividendPerShare.compareTo(BigDecimal.ZERO) > 0;
+        DividendFrequency frequency = inferFrequency(market, ticker, name, hasKnownDividend ? BigDecimal.ONE : dividendYield);
+        if (frequency == null || (!hasKnownDividend && dividendYield.compareTo(BigDecimal.ZERO) <= 0)) {
+            return AutoDividendEstimate.none();
+        }
+
+        if (dividendPerShare.compareTo(BigDecimal.ZERO) <= 0 && quote != null && quote.currentPrice() != null) {
+            BigDecimal annualDividend = quote.currentPrice()
+                    .multiply(dividendYield)
+                    .divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP);
+            dividendPerShare = annualDividend.divide(BigDecimal.valueOf(paymentsPerYear(frequency)), 4, RoundingMode.HALF_UP);
+        }
+
+        if (dividendPerShare.compareTo(BigDecimal.ZERO) <= 0) {
+            return AutoDividendEstimate.none();
+        }
+
+        return new AutoDividendEstimate(
+                true,
+                frequency,
+                dividendPerShare,
+                inferPaymentMonth(market, ticker, frequency),
+                quote != null ? quote.source() : "local-rule"
+        );
+    }
+
+    private DividendFrequency inferFrequency(String market, String ticker, String name, BigDecimal dividendYield) {
+        if (dividendYield == null || dividendYield.compareTo(BigDecimal.ZERO) <= 0) return null;
+        if (isMonthlyDividend(ticker, name)) return DividendFrequency.MONTHLY;
+        if (isSemiAnnualDividend(ticker, name)) return DividendFrequency.SEMI_ANNUAL;
+        if ("US".equals(market)) return DividendFrequency.QUARTERLY;
+        if (List.of("005930", "005935", "000660").contains(ticker)) return DividendFrequency.QUARTERLY;
+        return DividendFrequency.ANNUAL;
+    }
+
+    private boolean isMonthlyDividend(String ticker, String name) {
+        String upperName = name.toUpperCase();
+        return List.of("O", "JEPI", "JEPQ", "QYLD", "RYLD", "XYLD", "MAIN", "STAG").contains(ticker)
+                || name.contains("월배당")
+                || upperName.contains("MONTHLY");
+    }
+
+    private boolean isSemiAnnualDividend(String ticker, String name) {
+        String upperName = name.toUpperCase();
+        return upperName.contains("SEMI")
+                || name.contains("반기")
+                || List.of("005380", "000270").contains(ticker);
+    }
+
+    private int paymentsPerYear(DividendFrequency frequency) {
+        return switch (frequency) {
+            case MONTHLY -> 12;
+            case QUARTERLY -> 4;
+            case SEMI_ANNUAL -> 2;
+            case ANNUAL, SPECIAL -> 1;
+        };
+    }
+
+    private Integer inferPaymentMonth(String market, String ticker, DividendFrequency frequency) {
+        if (frequency == DividendFrequency.MONTHLY) return 1;
+        if (List.of("005930", "005935", "000660").contains(ticker)) return 4;
+        if ("AAPL".equals(ticker)) return 2;
+        if ("SCHD".equals(ticker)) return 3;
+        if (frequency == DividendFrequency.SEMI_ANNUAL) return "KR".equals(market) ? 6 : 3;
+        if (frequency == DividendFrequency.QUARTERLY) return "KR".equals(market) ? 4 : 3;
+        return "KR".equals(market) ? 4 : 12;
+    }
+
+    private BigDecimal knownDividendPerShare(String ticker) {
+        return switch (ticker) {
+            case "005930", "005935" -> BigDecimal.valueOf(361);
+            case "000660" -> BigDecimal.valueOf(300);
+            case "AAPL" -> BigDecimal.valueOf(0.26);
+            case "SCHD" -> BigDecimal.valueOf(0.82);
+            case "JEPI" -> BigDecimal.valueOf(0.40);
+            case "JEPQ" -> BigDecimal.valueOf(0.45);
+            case "O" -> BigDecimal.valueOf(0.27);
+            default -> BigDecimal.ZERO;
+        };
+    }
+
+    private String inferMarket(Stock stock) {
+        String ticker = stock.getTicker() == null ? "" : stock.getTicker().trim().toUpperCase();
+        if ("KRW".equalsIgnoreCase(stock.getCurrency()) || ticker.matches("\\d{5}[0-9A-Z]")) return "KR";
+        return "US";
+    }
+
+    private record AutoDividendEstimate(
+            boolean available,
+            DividendFrequency frequency,
+            BigDecimal dividendPerShare,
+            Integer paymentMonth,
+            String source
+    ) {
+        private static AutoDividendEstimate none() {
+            return new AutoDividendEstimate(false, null, BigDecimal.ZERO, null, "none");
+        }
     }
 }

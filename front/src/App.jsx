@@ -12,6 +12,7 @@ import AveragePriceCalculator from "./pages/calculators/AveragePriceCalculator.j
 import CompoundCalculator from "./pages/calculators/CompoundCalculator.jsx";
 import DividendReinvestmentCalculator from "./pages/calculators/DividendReinvestmentCalculator.jsx";
 import MyPortfolioPage from "./pages/portfolio/MyPortfolioPage.jsx";
+import PortfolioManagementPage from "./pages/portfolio/PortfolioManagementPage.jsx";
 import DividendGrowthTracker from "./pages/portfolio/DividendGrowthTracker.jsx";
 import MonthlyDividendCalendar from "./pages/portfolio/MonthlyDividendCalendar.jsx";
 import RebalancingPage from "./pages/portfolio/RebalancingPage.jsx";
@@ -69,7 +70,7 @@ function App() {
           <Route path="/disclaimer" element={<DisclaimerPage />} />
           <Route path="/404" element={<NotFoundPage />} />
           <Route element={<ProtectedRoute />}>
-            <Route path="/portfolio/my" element={<MyPortfolioPage />} />
+            <Route path="/portfolio/my" element={<PortfolioManagementPage />} />
             <Route path="/portfolio/holdings" element={<MyPortfolioPage />} />
             <Route path="/portfolio/dividend-growth" element={<DividendGrowthTracker />} />
             <Route path="/portfolio/monthly-calendar" element={<MonthlyDividendCalendar />} />

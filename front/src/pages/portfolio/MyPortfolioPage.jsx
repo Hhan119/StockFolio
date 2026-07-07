@@ -7,15 +7,6 @@ import { formatMoney, formatPercent } from "../../utils/format.js";
 const chartColors = ["#22d3ee", "#34d399", "#60a5fa", "#f59e0b", "#fb7185", "#a78bfa", "#94a3b8"];
 const monthLabels = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
 
-const defaultDividend = (stock) => {
-  const ticker = stock.ticker?.toUpperCase();
-  if (ticker === "005930") return { dividendPerShare: "361", paymentMonth: 4, frequency: "QUARTERLY" };
-  if (ticker === "000660") return { dividendPerShare: "300", paymentMonth: 4, frequency: "QUARTERLY" };
-  if (ticker === "AAPL") return { dividendPerShare: "0.26", paymentMonth: 2, frequency: "QUARTERLY" };
-  if (ticker === "SCHD") return { dividendPerShare: "0.82", paymentMonth: 3, frequency: "QUARTERLY" };
-  return { dividendPerShare: "", paymentMonth: 1, frequency: "QUARTERLY" };
-};
-
 function isKoreanStock(stock) {
   return stock.currency === "KRW" || /^\d{5}[0-9A-Z]$/i.test(stock.ticker || "") || stock.market === "KR";
 }
@@ -53,7 +44,7 @@ function MyPortfolioPage() {
   const [keyword, setKeyword] = useState("");
   const [results, setResults] = useState([]);
   const [modalStock, setModalStock] = useState(null);
-  const [holdingForm, setHoldingForm] = useState({ quantity: 1, averagePrice: "", currency: "USD", memo: "", dividendPerShare: "", paymentMonth: 1, frequency: "QUARTERLY" });
+  const [holdingForm, setHoldingForm] = useState({ quantity: 1, averagePrice: "", currency: "USD", memo: "" });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -72,7 +63,6 @@ function MyPortfolioPage() {
   const estimatedAnnualDividend = Number(dividendSummary?.annualEstimated || 0);
   const pieStyle = useMemo(() => ({ background: buildPie(filteredStocks) }), [filteredStocks]);
   const topHoldings = [...filteredStocks].sort((a, b) => Number(b.totalValue || 0) - Number(a.totalValue || 0)).slice(0, 5);
-  const dividendStockIds = useMemo(() => new Set((dividendSummary?.monthly || []).flatMap((month) => month.items || []).map((item) => item.stockId)), [dividendSummary]);
 
   const loadPortfolios = async () => {
     const data = await portfolioService.list();
@@ -125,7 +115,6 @@ function MyPortfolioPage() {
       averagePrice: stock.currentPrice ? String(stock.currentPrice) : "",
       currency: stock.currency || (stock.market === "KR" ? "KRW" : "USD"),
       memo: "",
-      ...defaultDividend(stock),
     });
   };
 
@@ -139,7 +128,7 @@ function MyPortfolioPage() {
       const portfolioId = await ensurePortfolio();
       const detailResult = await stockService.detail(modalStock.ticker);
       const currentPrice = Number(detailResult.currentPrice || modalStock.currentPrice || 0);
-      const savedStock = await portfolioService.addStock({
+      await portfolioService.addStock({
         portfolioId,
         ticker: modalStock.ticker,
         name: modalStock.name,
@@ -150,16 +139,6 @@ function MyPortfolioPage() {
         currency: holdingForm.currency,
         memo: holdingForm.memo,
       });
-
-      const dividendPerShare = Number(holdingForm.dividendPerShare || 0);
-      if (dividendPerShare > 0 && !dividendStockIds.has(savedStock.id)) {
-        await portfolioService.addDividend(savedStock.id, {
-          frequency: holdingForm.frequency,
-          dividendPerShare,
-          paymentMonth: Number(holdingForm.paymentMonth),
-          memo: "포트폴리오 등록 시 자동 연결",
-        });
-      }
 
       setModalStock(null);
       setMessage(`${modalStock.name} 보유종목을 저장했습니다.`);
@@ -407,18 +386,9 @@ function MyPortfolioPage() {
               <label className="grid gap-1 text-sm font-bold">통화<input className="form-control border-slate-800 bg-slate-950 text-white" value={holdingForm.currency} onChange={(event) => setHoldingForm({ ...holdingForm, currency: event.target.value })} /></label>
               <label className="grid gap-1 text-sm font-bold">평균 매수가<input className="form-control border-slate-800 bg-slate-950 text-white" type="number" min="0" step="0.01" value={holdingForm.averagePrice} onChange={(event) => setHoldingForm({ ...holdingForm, averagePrice: event.target.value })} /></label>
               <label className="grid gap-1 text-sm font-bold">수량<input className="form-control border-slate-800 bg-slate-950 text-white" type="number" min="1" value={holdingForm.quantity} onChange={(event) => setHoldingForm({ ...holdingForm, quantity: event.target.value })} /></label>
-              <label className="grid gap-1 text-sm font-bold">주당 배당금<input className="form-control border-slate-800 bg-slate-950 text-white" type="number" min="0" step="0.0001" value={holdingForm.dividendPerShare} onChange={(event) => setHoldingForm({ ...holdingForm, dividendPerShare: event.target.value })} /></label>
-              <label className="grid gap-1 text-sm font-bold">지급월<input className="form-control border-slate-800 bg-slate-950 text-white" type="number" min="1" max="12" value={holdingForm.paymentMonth} onChange={(event) => setHoldingForm({ ...holdingForm, paymentMonth: event.target.value })} /></label>
-              <label className="grid gap-1 text-sm font-bold sm:col-span-2">
-                배당 주기
-                <select className="form-control border-slate-800 bg-slate-950 text-white" value={holdingForm.frequency} onChange={(event) => setHoldingForm({ ...holdingForm, frequency: event.target.value })}>
-                  <option value="MONTHLY">월배당</option>
-                  <option value="QUARTERLY">분기배당</option>
-                  <option value="SEMI_ANNUAL">반기배당</option>
-                  <option value="ANNUAL">연배당</option>
-                  <option value="SPECIAL">특별배당</option>
-                </select>
-              </label>
+              <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-3 text-sm font-bold leading-6 text-cyan-100 sm:col-span-2">
+                저장하면 배당 가능 여부, 배당 주기, 예상 주당 배당금은 백엔드에서 자동 추정해 월배당 캘린더에 연결합니다.
+              </div>
               <label className="grid gap-1 text-sm font-bold sm:col-span-2">메모<input className="form-control border-slate-800 bg-slate-950 text-white" value={holdingForm.memo} onChange={(event) => setHoldingForm({ ...holdingForm, memo: event.target.value })} /></label>
             </div>
             <button className="mt-5 w-full rounded-2xl bg-cyan-500 px-4 py-3 font-black text-slate-950 hover:bg-cyan-300" disabled={loading}>저장</button>
