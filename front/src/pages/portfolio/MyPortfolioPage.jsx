@@ -25,10 +25,10 @@ function buildPie(stocks = []) {
 }
 
 function DarkMetric({ label, value, tone = "default" }) {
-  const toneClass = tone === "positive" ? "text-cyan-300" : tone === "negative" ? "text-rose-300" : "text-white";
+  const toneClass = tone === "positive" ? "text-cyan-700 dark:text-cyan-300" : tone === "negative" ? "text-rose-600 dark:text-rose-300" : "text-slate-950 dark:text-white";
   return (
-    <article className="rounded-2xl border border-slate-700/80 bg-slate-900 p-3 sm:p-4">
-      <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">{label}</p>
+    <article className="rounded-2xl bg-slate-50 p-3 shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700 sm:p-4">
+      <p className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{label}</p>
       <strong className={`mt-1 block text-xl font-black sm:text-2xl ${toneClass}`}>{value}</strong>
     </article>
   );
@@ -217,8 +217,8 @@ function MyPortfolioPage() {
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <DarkMetric label="투자금" value={formatMoney(totalCost)} />
               <DarkMetric label="평가손익" value={formatMoney(totalProfit)} tone={totalProfit >= 0 ? "positive" : "negative"} />
-              <DarkMetric label="연 배당" value={formatMoney(estimatedAnnualDividend)} />
-              <DarkMetric label="월 배당" value={formatMoney(estimatedAnnualDividend / 12)} />
+              <DarkMetric label="연 배당" value={formatMoney(estimatedAnnualDividend)} tone="positive" />
+              <DarkMetric label="월 배당" value={formatMoney(estimatedAnnualDividend / 12)} tone="positive" />
             </div>
           </div>
 
