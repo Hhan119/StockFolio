@@ -72,7 +72,7 @@ function LoginPage() {
               <span className="grid h-12 w-12 place-items-center rounded-2xl bg-cyan-500 text-sm font-black text-slate-950">SF</span>
               <span>
                 <strong className="block text-2xl font-black text-white">StockFolio</strong>
-                <small className="font-bold text-slate-400">주식과 ETF 포트폴리오 관리</small>
+                <small className="font-bold text-slate-200">주식과 ETF 포트폴리오 관리</small>
               </span>
             </Link>
 
@@ -81,14 +81,14 @@ function LoginPage() {
                 <div className="border-b border-slate-800 p-5">
                   <p className="text-xs font-black uppercase tracking-wider text-cyan-300">Portfolio Intelligence</p>
                   <h2 className="mt-2 text-3xl font-black leading-tight text-white">내 자산과 배당 흐름을 한 화면에서 관리하세요.</h2>
-                  <p className="mt-3 text-sm font-bold leading-6 text-slate-400">
+                  <p className="mt-3 text-sm font-bold leading-6 text-slate-200">
                     종목 검색, 보유 수량 등록, 현재가 갱신, 월별 배당 캘린더까지 투자 현황을 빠르게 정리합니다.
                   </p>
                 </div>
                 <div className="grid gap-3 p-5">
                   <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
                     <div className="rounded-2xl bg-slate-950 p-4">
-                      <p className="text-sm font-bold text-slate-400">총 평가금액</p>
+                      <p className="text-sm font-bold text-slate-200">총 평가금액</p>
                       <strong className="mt-1 block text-2xl font-black text-white">18,420,000원</strong>
                       <span className="mt-2 inline-block text-sm font-black text-cyan-300">+5.17%</span>
                     </div>
@@ -104,7 +104,7 @@ function LoginPage() {
                     <div className="grid grid-cols-[1fr_auto] items-center rounded-xl bg-slate-950 p-3" key={name}>
                       <div>
                         <strong className="block text-sm text-white">{name}</strong>
-                        <span className="text-xs font-bold text-slate-500">{market}</span>
+                        <span className="text-xs font-bold text-slate-300">{market}</span>
                       </div>
                       <span className="font-black text-cyan-300">{ratio}</span>
                     </div>
@@ -115,18 +115,18 @@ function LoginPage() {
               <div className="grid gap-4">
                 <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
                   <h3 className="font-black text-white">월배당 캘린더</h3>
-                  <div className="mt-4 grid grid-cols-3 gap-2">
-                    {[1, 2, 3, 4, 5, 6].map((month) => (
-                      <div className={`rounded-xl p-3 text-center text-xs font-black ${month === 4 ? "bg-cyan-500 text-slate-950" : "bg-slate-950 text-slate-500"}`} key={month}>
+                  <div className="mt-4 grid grid-cols-4 gap-2">
+                    {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
+                      <div className={`rounded-xl p-3 text-center text-xs font-black ${month === 7 ? "bg-cyan-500 text-slate-950" : "bg-slate-950 text-slate-200"}`} key={month}>
                         {month}월
                       </div>
                     ))}
                   </div>
                 </div>
                 <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-                  <p className="text-sm font-bold text-slate-400">예상 월 배당</p>
+                  <p className="text-sm font-bold text-slate-200">예상 월 배당</p>
                   <strong className="mt-2 block text-3xl font-black text-cyan-300">142,800원</strong>
-                  <p className="mt-2 text-sm font-bold leading-6 text-slate-500">보유 수량과 배당 주기를 기준으로 자동 계산합니다.</p>
+                  <p className="mt-2 text-sm font-bold leading-6 text-slate-300">보유 수량과 배당 주기를 기준으로 자동 계산합니다.</p>
                 </div>
               </div>
             </div>
@@ -136,7 +136,7 @@ function LoginPage() {
                 <article className="rounded-2xl border border-slate-800 bg-slate-900 p-4" key={item.title}>
                   <span className="grid h-10 w-10 place-items-center rounded-2xl bg-cyan-500/15 text-xs font-black text-cyan-300">{item.icon}</span>
                   <h2 className="mt-3 text-sm font-black text-white">{item.title}</h2>
-                  <p className="mt-1 text-xs font-bold leading-5 text-slate-400">{item.text}</p>
+                  <p className="mt-1 text-xs font-bold leading-5 text-slate-300">{item.text}</p>
                 </article>
               ))}
             </div>

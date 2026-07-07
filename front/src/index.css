@@ -38,10 +38,10 @@ a {
   color: #17202a;
 }
 
-:where(.bg-white:not([class*="dark:bg-"]) h1),
-:where(.bg-white:not([class*="dark:bg-"]) h2),
-:where(.bg-white:not([class*="dark:bg-"]) h3),
-:where(.bg-white:not([class*="dark:bg-"]) strong) {
+:where(.bg-white:not([class*="dark:bg-"]) h1:not([class*="text-"])),
+:where(.bg-white:not([class*="dark:bg-"]) h2:not([class*="text-"])),
+:where(.bg-white:not([class*="dark:bg-"]) h3:not([class*="text-"])),
+:where(.bg-white:not([class*="dark:bg-"]) strong:not([class*="text-"])) {
   color: #0f172a;
 }
 
