@@ -136,7 +136,9 @@ public class MarketDataService {
 
         List<MarketDto.SearchResult> fmp = searchFmp(keyword);
         if (!fmp.isEmpty()) return fmp;
-        return searchFinnhub(keyword);
+        List<MarketDto.SearchResult> finnhub = searchFinnhub(keyword);
+        if (!finnhub.isEmpty()) return finnhub;
+        return searchYahooFinance(keyword);
     }
 
     private List<MarketDto.SearchResult> enrichSearchPrices(List<MarketDto.SearchResult> results) {
@@ -465,6 +467,40 @@ public class MarketDataService {
         }
     }
 
+    private List<MarketDto.SearchResult> searchYahooFinance(String keyword) {
+        if (!hasText(keyword)) return List.of();
+        try {
+            JsonNode response = restClientBuilder.build()
+                    .get()
+                    .uri("https://query2.finance.yahoo.com/v1/finance/search?q={keyword}&quotesCount=30&newsCount=0", keyword)
+                    .header(HttpHeaders.USER_AGENT, "Mozilla/5.0")
+                    .retrieve()
+                    .body(JsonNode.class);
+
+            JsonNode quotes = response.path("quotes");
+            if (!quotes.isArray()) return List.of();
+
+            List<MarketDto.SearchResult> results = new ArrayList<>();
+            for (JsonNode item : quotes) {
+                if (results.size() >= 30) break;
+                String symbol = text(item, "symbol").toUpperCase();
+                String quoteType = firstNonBlank(text(item, "quoteType"), text(item, "typeDisp")).toUpperCase();
+                if (!hasText(symbol) || symbol.contains(".") || symbol.contains("=") || symbol.startsWith("^")) continue;
+                if (!List.of("EQUITY", "ETF", "MUTUALFUND").contains(quoteType)) continue;
+
+                MarketDto.Quote quote = quoteYahooFinance(symbol);
+                BigDecimal price = quote != null ? quote.currentPrice() : BigDecimal.ZERO;
+                String currency = quote != null ? quote.currency() : firstNonBlank(text(item, "currency"), "USD");
+                String name = firstNonBlank(text(item, "shortname"), text(item, "longname"), text(item, "name"), symbol);
+                String exchange = firstNonBlank(text(item, "exchDisp"), text(item, "exchange"), "US");
+                results.add(new MarketDto.SearchResult("US", symbol, name, currency, exchange, price, false, "yahoo-finance-search"));
+            }
+            return results;
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
+
     private MarketDto.Quote quoteFinnhub(String ticker) {
         try {
             FinnhubQuoteResponse response = restClientBuilder.build()
@@ -707,12 +743,12 @@ public class MarketDataService {
                 kr("055550", "신한지주", 48000, true),
                 kr("096770", "SK이노베이션", 116000, true),
                 kr("207940", "삼성바이오로직스", 780000, false),
-                kr("000150", "두산", 0, true),
-                kr("000155", "두산우", 0, true),
-                kr("034020", "두산에너빌리티", 0, true),
-                kr("241560", "두산밥캣", 0, true),
-                kr("336260", "두산퓨얼셀", 0, false),
-                kr("454910", "두산로보틱스", 0, false),
+                kr("000150", "두산", 184000, true),
+                kr("000155", "두산우", 98000, true),
+                kr("034020", "두산에너빌리티", 21000, true),
+                kr("241560", "두산밥캣", 54000, true),
+                kr("336260", "두산퓨얼셀", 18000, false),
+                kr("454910", "두산로보틱스", 75000, false),
                 us("AAPL", "Apple Inc.", 195, true),
                 us("MSFT", "Microsoft Corp.", 440, true),
                 us("NVDA", "NVIDIA Corp.", 120, true),
@@ -723,6 +759,22 @@ public class MarketDataService {
                 us("KO", "Coca-Cola Co.", 63, true),
                 us("JNJ", "Johnson & Johnson", 148, true),
                 us("O", "Realty Income Corp.", 54, true),
+                us("AVGO", "Broadcom Inc.", 171, true),
+                us("LLY", "Eli Lilly and Co.", 905, true),
+                us("JPM", "JPMorgan Chase & Co.", 210, true),
+                us("V", "Visa Inc.", 275, true),
+                us("MA", "Mastercard Inc.", 470, true),
+                us("WMT", "Walmart Inc.", 68, true),
+                us("PG", "Procter & Gamble Co.", 165, true),
+                us("XOM", "Exxon Mobil Corp.", 115, true),
+                us("UNH", "UnitedHealth Group Inc.", 520, true),
+                us("HD", "Home Depot Inc.", 360, true),
+                us("COST", "Costco Wholesale Corp.", 850, true),
+                us("NFLX", "Netflix Inc.", 650, false),
+                us("AMD", "Advanced Micro Devices Inc.", 160, false),
+                us("INTC", "Intel Corp.", 31, true),
+                us("ORCL", "Oracle Corp.", 135, true),
+                us("CRM", "Salesforce Inc.", 260, false),
                 us("SCHD", "Schwab U.S. Dividend Equity ETF", 81.2, true),
                 us("JEPI", "JPMorgan Equity Premium Income ETF", 56.4, true),
                 us("JEPQ", "JPMorgan Nasdaq Equity Premium Income ETF", 54.8, true),
@@ -742,9 +794,28 @@ public class MarketDataService {
                 us("RYLD", "Global X Russell 2000 Covered Call ETF", 16.4, true),
                 us("NOBL", "ProShares S&P 500 Dividend Aristocrats ETF", 97.8, true),
                 us("SDY", "SPDR S&P Dividend ETF", 129.2, true),
+                us("TLT", "iShares 20+ Year Treasury Bond ETF", 92.4, true),
+                us("IEF", "iShares 7-10 Year Treasury Bond ETF", 94.8, true),
+                us("SHY", "iShares 1-3 Year Treasury Bond ETF", 82.1, true),
+                us("BND", "Vanguard Total Bond Market ETF", 72.5, true),
+                us("AGG", "iShares Core U.S. Aggregate Bond ETF", 98.8, true),
+                us("HYG", "iShares iBoxx $ High Yield Corporate Bond ETF", 78.6, true),
+                us("LQD", "iShares iBoxx $ Investment Grade Corporate Bond ETF", 109.2, true),
+                us("TQQQ", "ProShares UltraPro QQQ", 73.5, false),
+                us("SQQQ", "ProShares UltraPro Short QQQ", 7.9, false),
+                us("QLD", "ProShares Ultra QQQ", 104.3, false),
+                us("SSO", "ProShares Ultra S&P500", 88.2, false),
+                us("UPRO", "ProShares UltraPro S&P500", 78.4, false),
+                us("SPXL", "Direxion Daily S&P 500 Bull 3X Shares", 146.2, false),
+                us("SOXL", "Direxion Daily Semiconductor Bull 3X Shares", 41.8, false),
                 kr("379800", "KODEX 미국S&P500TR", 12850, true),
                 kr("458730", "TIGER 미국배당다우존스", 11240, true),
-                kr("402970", "ACE 미국배당다우존스", 11890, true)
+                kr("402970", "ACE 미국배당다우존스", 11890, true),
+                kr("305080", "TIGER 미국채10년선물", 11920, true),
+                kr("148070", "KOSEF 국고채10년", 112300, true),
+                kr("252670", "KODEX 200선물인버스2X", 2150, false),
+                kr("233740", "KODEX 코스닥150레버리지", 10450, false),
+                kr("122630", "KODEX 레버리지", 17800, false)
         );
     }
 

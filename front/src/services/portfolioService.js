@@ -22,6 +22,9 @@ export const portfolioService = {
   updatePrice(stockId, currentPrice) {
     return api.patch(`/api/stocks/${stockId}/price`, { currentPrice }).then((response) => response.data);
   },
+  updateStock(stockId, payload) {
+    return api.put(`/api/stocks/${stockId}`, payload).then((response) => response.data);
+  },
   removeStock(stockId) {
     return api.delete(`/api/stocks/${stockId}`);
   },

@@ -6,6 +6,7 @@ import { formatMoney, formatPercent } from "../../utils/format.js";
 
 const emptyPortfolioForm = { name: "", description: "" };
 const emptyHoldingForm = { quantity: 1, averagePrice: "", memo: "" };
+const emptyEditStockForm = { quantity: 1, avgPrice: "", currentPrice: "", currency: "KRW", memo: "" };
 
 function PortfolioManagementPage() {
   const [portfolios, setPortfolios] = useState([]);
@@ -18,6 +19,9 @@ function PortfolioManagementPage() {
   const [selectedStock, setSelectedStock] = useState(null);
   const [holdingForm, setHoldingForm] = useState(emptyHoldingForm);
   const [draftHoldings, setDraftHoldings] = useState([]);
+  const [savedPanelOpen, setSavedPanelOpen] = useState(false);
+  const [editingStock, setEditingStock] = useState(null);
+  const [editStockForm, setEditStockForm] = useState(emptyEditStockForm);
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [message, setMessage] = useState("");
@@ -145,6 +149,76 @@ function PortfolioManagementPage() {
     setDraftHoldings((current) => current.filter((item) => item.key !== key));
   };
 
+  const openEditStock = (stock) => {
+    setEditingStock(stock);
+    setEditStockForm({
+      quantity: stock.quantity || 1,
+      avgPrice: stock.avgPrice || "",
+      currentPrice: stock.currentPrice || "",
+      currency: stock.currency || "KRW",
+      memo: stock.memo || "",
+    });
+  };
+
+  const closeEditStock = () => {
+    setEditingStock(null);
+    setEditStockForm(emptyEditStockForm);
+  };
+
+  const updateSavedStock = async (event) => {
+    event.preventDefault();
+    if (!editingStock) return;
+    const quantity = Number(editStockForm.quantity || 0);
+    const avgPrice = Number(editStockForm.avgPrice || 0);
+    const currentPrice = Number(editStockForm.currentPrice || 0);
+    if (quantity <= 0 || avgPrice <= 0) {
+      setError("수량과 평균 매수가는 0보다 커야 합니다.");
+      return;
+    }
+
+    setLoading(true);
+    setMessage("");
+    setError("");
+    try {
+      const editedName = editingStock.name;
+      await portfolioService.updateStock(editingStock.id, {
+        ticker: editingStock.ticker,
+        name: editingStock.name,
+        quantity,
+        avgPrice,
+        currentPrice: currentPrice > 0 ? currentPrice : avgPrice,
+        sector: editingStock.sector,
+        currency: editStockForm.currency || editingStock.currency,
+        memo: editStockForm.memo,
+      });
+      closeEditStock();
+      await loadPortfolios(selectedId);
+      await loadSelectedDetail(selectedId);
+      setMessage(`${editedName} 정보를 수정했습니다.`);
+    } catch {
+      setError("종목 정보 수정에 실패했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeSavedStock = async (stock) => {
+    if (!stock?.id || !window.confirm(`${stock.name} 종목을 이 포트폴리오에서 삭제할까요?`)) return;
+    setLoading(true);
+    setMessage("");
+    setError("");
+    try {
+      await portfolioService.removeStock(stock.id);
+      await loadPortfolios(selectedId);
+      await loadSelectedDetail(selectedId);
+      setMessage(`${stock.name} 종목을 삭제했습니다.`);
+    } catch {
+      setError("종목 삭제에 실패했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const savePortfolio = async () => {
     if (!portfolioForm.name.trim()) {
       setError("포트폴리오 이름을 입력해주세요.");
@@ -234,8 +308,8 @@ function PortfolioManagementPage() {
         </p>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <main className="grid gap-4">
+      <div className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
+        <main className="grid min-w-0 gap-4">
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="grid gap-4 xl:grid-cols-2">
               <div className="grid content-start gap-3">
@@ -402,19 +476,31 @@ function PortfolioManagementPage() {
             </div>
           </section>
 
-          <SavedPortfolioDetail detail={selectedDetail} stocks={selectedStocks} onDelete={deleteSelectedPortfolio} loading={loading} />
+          <SavedPortfolioDetail
+            detail={selectedDetail}
+            loading={loading}
+            onDelete={deleteSelectedPortfolio}
+            onEditStock={openEditStock}
+            onRemoveStock={removeSavedStock}
+            stocks={selectedStocks}
+          />
         </main>
 
-        <aside className="grid content-start gap-4">
+        <aside className="grid min-w-0 content-start gap-4">
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-black uppercase tracking-wider text-cyan-700 dark:text-cyan-300">Saved</p>
                 <h3 className="mt-1 text-xl font-black text-slate-950 dark:text-white">저장된 포트폴리오</h3>
               </div>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700 dark:bg-slate-800 dark:text-slate-300">{portfolios.length}개</span>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700 dark:bg-slate-800 dark:text-slate-300">{portfolios.length}개</span>
+                <button className="btn-muted px-3 py-1.5 text-xs 2xl:hidden" type="button" onClick={() => setSavedPanelOpen((open) => !open)}>
+                  {savedPanelOpen ? "접기" : "보기"}
+                </button>
+              </div>
             </div>
-            <div className="mt-4 grid max-h-[620px] gap-2 overflow-y-auto pr-1">
+            <div className={`${savedPanelOpen ? "grid" : "hidden 2xl:grid"} mt-4 max-h-[620px] gap-2 overflow-y-auto pr-1`}>
               {portfolios.map((portfolio) => {
                 const active = String(portfolio.id) === String(selectedId);
                 const profit = Number(portfolio.totalProfitLoss || 0);
@@ -449,11 +535,46 @@ function PortfolioManagementPage() {
           </section>
         </aside>
       </div>
+
+      {editingStock && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/75 p-4">
+          <form className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-5 text-slate-950 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-white" onSubmit={updateSavedStock}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-wider text-cyan-700 dark:text-cyan-300">Edit Holding</p>
+                <h3 className="mt-1 text-2xl font-black">{editingStock.name}</h3>
+                <p className="text-sm font-bold text-slate-500 dark:text-slate-400">{editingStock.ticker}</p>
+              </div>
+              <button className="btn-muted text-sm" type="button" onClick={closeEditStock}>
+                닫기
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <NumberInput label="수량" value={editStockForm.quantity} onChange={(value) => setEditStockForm({ ...editStockForm, quantity: value })} />
+              <NumberInput label="평균 매수가" step="0.01" value={editStockForm.avgPrice} onChange={(value) => setEditStockForm({ ...editStockForm, avgPrice: value })} />
+              <NumberInput label="현재가" step="0.01" value={editStockForm.currentPrice} onChange={(value) => setEditStockForm({ ...editStockForm, currentPrice: value })} />
+              <label className="grid gap-1 text-sm font-bold text-slate-700 dark:text-slate-200">
+                통화
+                <input className="form-control bg-slate-50 dark:bg-slate-800" value={editStockForm.currency} onChange={(event) => setEditStockForm({ ...editStockForm, currency: event.target.value })} />
+              </label>
+              <label className="grid gap-1 text-sm font-bold text-slate-700 dark:text-slate-200 sm:col-span-2">
+                메모
+                <input className="form-control bg-slate-50 dark:bg-slate-800" value={editStockForm.memo} onChange={(event) => setEditStockForm({ ...editStockForm, memo: event.target.value })} />
+              </label>
+            </div>
+
+            <button className="btn-muted mt-5 min-h-12 w-full text-sm" disabled={loading}>
+              수정 저장
+            </button>
+          </form>
+        </div>
+      )}
     </section>
   );
 }
 
-function SavedPortfolioDetail({ detail, stocks, onDelete, loading }) {
+function SavedPortfolioDetail({ detail, stocks, onDelete, onEditStock, onRemoveStock, loading }) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -477,7 +598,7 @@ function SavedPortfolioDetail({ detail, stocks, onDelete, loading }) {
       </div>
 
       <div className="mt-5 overflow-x-auto">
-        <table className="w-full min-w-[980px] text-left text-sm">
+        <table className="w-full min-w-[1080px] text-left text-sm">
           <thead className="border-b border-slate-200 text-xs font-black uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:text-slate-400">
             <tr>
               <th className="py-3">종목</th>
@@ -489,6 +610,7 @@ function SavedPortfolioDetail({ detail, stocks, onDelete, loading }) {
               <th>평가금액</th>
               <th>손익</th>
               <th>수익률</th>
+              <th>관리</th>
             </tr>
           </thead>
           <tbody>
@@ -506,6 +628,16 @@ function SavedPortfolioDetail({ detail, stocks, onDelete, loading }) {
                 </td>
                 <td className={Number(stock.profitLossRate || 0) >= 0 ? "font-black text-cyan-700" : "font-black text-rose-600"}>
                   {formatPercent(stock.profitLossRate)}
+                </td>
+                <td>
+                  <div className="flex gap-1">
+                    <button className="rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-cyan-600 hover:text-white dark:bg-slate-800 dark:text-slate-200" type="button" onClick={() => onEditStock(stock)}>
+                      수정
+                    </button>
+                    <button className="rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-rose-600 hover:text-white dark:bg-slate-800 dark:text-slate-200" type="button" onClick={() => onRemoveStock(stock)}>
+                      삭제
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
