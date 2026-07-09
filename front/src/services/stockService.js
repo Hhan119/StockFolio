@@ -1,6 +1,24 @@
 import { api } from "./api.js";
+import { etfs } from "../data/publicContent.js";
 
 const hasPrice = (item) => Number(item?.currentPrice || 0) > 0;
+const etfPriceMap = new Map(etfs.map((etf) => [etf.ticker.toUpperCase(), etf]));
+
+const withLocalEtfPrice = (item) => {
+  if (hasPrice(item) || !item?.ticker) return item;
+  const etf = etfPriceMap.get(String(item.ticker).toUpperCase());
+  if (!etf || Number(etf.price || 0) <= 0) return item;
+  return {
+    ...item,
+    currentPrice: etf.price,
+    currency: item.currency || etf.currency,
+    exchange: item.exchange || etf.market,
+    market: item.market || (etf.currency === "KRW" ? "KR" : "US"),
+    name: item.name || etf.name,
+    dividendAvailable: Number(etf.dividendYield || 0) > 0 || item.dividendAvailable,
+    source: item.source || "local-etf-data",
+  };
+};
 
 async function enrichMissingPrices(items = []) {
   return Promise.all(items.map(async (item) => {
@@ -9,7 +27,7 @@ async function enrichMissingPrices(items = []) {
     try {
       const market = item.market || (String(item.ticker).match(/^\d{5}[0-9A-Z]$/i) ? "KR" : "US");
       const quote = await api.get("/api/market/quote", { params: { market, ticker: item.ticker } }).then((response) => response.data);
-      if (!hasPrice(quote)) return item;
+      if (!hasPrice(quote)) return withLocalEtfPrice(item);
       return {
         ...item,
         market: item.market || quote.market,
@@ -20,7 +38,7 @@ async function enrichMissingPrices(items = []) {
         source: quote.source || item.source,
       };
     } catch {
-      return item;
+      return withLocalEtfPrice(item);
     }
   }));
 }

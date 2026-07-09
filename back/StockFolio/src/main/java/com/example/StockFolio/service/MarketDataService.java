@@ -723,11 +723,28 @@ public class MarketDataService {
                 us("KO", "Coca-Cola Co.", 63, true),
                 us("JNJ", "Johnson & Johnson", 148, true),
                 us("O", "Realty Income Corp.", 54, true),
-                us("SCHD", "Schwab U.S. Dividend Equity ETF", 78, true),
-                us("JEPI", "JPMorgan Equity Premium Income ETF", 57, true),
-                us("VOO", "Vanguard S&P 500 ETF", 500, true),
-                us("SPY", "SPDR S&P 500 ETF", 545, true),
-                us("QQQ", "Invesco QQQ Trust", 470, true)
+                us("SCHD", "Schwab U.S. Dividend Equity ETF", 81.2, true),
+                us("JEPI", "JPMorgan Equity Premium Income ETF", 56.4, true),
+                us("JEPQ", "JPMorgan Nasdaq Equity Premium Income ETF", 54.8, true),
+                us("VOO", "Vanguard S&P 500 ETF", 505.1, true),
+                us("QQQM", "Invesco NASDAQ 100 ETF", 198.7, true),
+                us("VYM", "Vanguard High Dividend Yield ETF", 121.5, true),
+                us("HDV", "iShares Core High Dividend ETF", 111.8, true),
+                us("SPY", "SPDR S&P 500 ETF Trust", 548.3, true),
+                us("VTI", "Vanguard Total Stock Market ETF", 270.4, true),
+                us("DIA", "SPDR Dow Jones Industrial Average ETF", 394.2, true),
+                us("QQQ", "Invesco QQQ Trust", 483.6, true),
+                us("DGRO", "iShares Core Dividend Growth ETF", 59.6, true),
+                us("DGRW", "WisdomTree U.S. Quality Dividend Growth Fund", 78.1, true),
+                us("DIVO", "Amplify CWP Enhanced Dividend Income ETF", 39.7, true),
+                us("QYLD", "Global X NASDAQ 100 Covered Call ETF", 17.6, true),
+                us("XYLD", "Global X S&P 500 Covered Call ETF", 40.9, true),
+                us("RYLD", "Global X Russell 2000 Covered Call ETF", 16.4, true),
+                us("NOBL", "ProShares S&P 500 Dividend Aristocrats ETF", 97.8, true),
+                us("SDY", "SPDR S&P Dividend ETF", 129.2, true),
+                kr("379800", "KODEX 미국S&P500TR", 12850, true),
+                kr("458730", "TIGER 미국배당다우존스", 11240, true),
+                kr("402970", "ACE 미국배당다우존스", 11890, true)
         );
     }
 

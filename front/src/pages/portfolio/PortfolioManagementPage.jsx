@@ -237,9 +237,11 @@ function PortfolioManagementPage() {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <main className="grid gap-4">
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
+            <div className="grid gap-4 xl:grid-cols-2">
               <div className="grid content-start gap-3">
-                <h3 className="text-xl font-black text-slate-950 dark:text-white">1. 포트폴리오 정보</h3>
+                <div className="flex min-h-11 items-center">
+                  <h3 className="text-xl font-black text-slate-950 dark:text-white">1. 포트폴리오 정보</h3>
+                </div>
                 <label className="grid gap-1 text-sm font-bold text-slate-700 dark:text-slate-200">
                   포트폴리오 이름
                   <input
@@ -267,7 +269,7 @@ function PortfolioManagementPage() {
               </div>
 
               <div className="grid content-start gap-3">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-h-11 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <h3 className="text-xl font-black text-slate-950 dark:text-white">2. 종목 검색 후 담기</h3>
                   <div className="grid grid-cols-3 rounded-2xl bg-slate-100 p-1 text-xs font-black dark:bg-slate-800">
                     {[["ALL", "전체"], ["KR", "국내"], ["US", "해외"]].map(([value, label]) => (
@@ -287,13 +289,16 @@ function PortfolioManagementPage() {
                 </div>
 
                 <form className="grid gap-2 sm:grid-cols-[1fr_auto]" onSubmit={searchStocks}>
-                  <input
-                    className="form-control bg-slate-50 dark:bg-slate-800"
-                    placeholder="삼성전자, 두산, AAPL, SCHD"
-                    value={keyword}
-                    onChange={(event) => setKeyword(event.target.value)}
-                  />
-                  <button className="btn-muted min-h-11 text-sm" disabled={searching}>
+                  <label className="grid gap-1 text-sm font-bold text-slate-700 dark:text-slate-200">
+                    종목명 또는 티커
+                    <input
+                      className="form-control bg-slate-50 dark:bg-slate-800"
+                      placeholder="삼성전자, 두산, AAPL, SCHD"
+                      value={keyword}
+                      onChange={(event) => setKeyword(event.target.value)}
+                    />
+                  </label>
+                  <button className="btn-muted min-h-11 self-end text-sm" disabled={searching}>
                     {searching ? "검색 중" : "검색"}
                   </button>
                 </form>
@@ -425,12 +430,15 @@ function PortfolioManagementPage() {
                         <strong className="block truncate text-base font-black text-slate-950 dark:text-white">{portfolio.name}</strong>
                         <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{portfolio.stockCount}개 종목</span>
                       </div>
-                      <span className={profit >= 0 ? "text-xs font-black text-cyan-300" : "text-xs font-black text-rose-300"}>
+                      <span className={profit >= 0 ? "text-xs font-black text-cyan-700 dark:text-cyan-300" : "text-xs font-black text-rose-600 dark:text-rose-300"}>
                         {formatPercent(portfolio.totalProfitLossRate)}
                       </span>
                     </div>
-                    <strong className="mt-3 block text-2xl font-black text-slate-950 dark:text-white">{formatMoney(portfolio.totalValue)}</strong>
-                    <p className={profit >= 0 ? "mt-1 text-sm font-black text-cyan-300" : "mt-1 text-sm font-black text-rose-300"}>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-black">
+                      <span className="rounded-xl bg-white/70 px-2 py-1 text-slate-500 dark:bg-slate-900/60 dark:text-slate-400">투자금 {formatMoney(portfolio.totalCost)}</span>
+                      <span className="rounded-xl bg-white/70 px-2 py-1 text-slate-500 dark:bg-slate-900/60 dark:text-slate-400">평가 {formatMoney(portfolio.totalValue)}</span>
+                    </div>
+                    <p className={profit >= 0 ? "mt-1 text-sm font-black text-cyan-700 dark:text-cyan-300" : "mt-1 text-sm font-black text-rose-600 dark:text-rose-300"}>
                       {formatMoney(portfolio.totalProfitLoss)}
                     </p>
                   </button>
@@ -469,14 +477,17 @@ function SavedPortfolioDetail({ detail, stocks, onDelete, loading }) {
       </div>
 
       <div className="mt-5 overflow-x-auto">
-        <table className="w-full min-w-[720px] text-left text-sm">
+        <table className="w-full min-w-[980px] text-left text-sm">
           <thead className="border-b border-slate-200 text-xs font-black uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:text-slate-400">
             <tr>
               <th className="py-3">종목</th>
               <th>티커</th>
               <th>수량</th>
+              <th>평균단가</th>
               <th>현재가</th>
+              <th>투자금</th>
               <th>평가금액</th>
+              <th>손익</th>
               <th>수익률</th>
             </tr>
           </thead>
@@ -486,8 +497,13 @@ function SavedPortfolioDetail({ detail, stocks, onDelete, loading }) {
                 <td className="py-3 font-black text-slate-950 dark:text-white">{stock.name}</td>
                 <td className="font-bold text-slate-500 dark:text-slate-400">{stock.ticker}</td>
                 <td>{Number(stock.quantity || 0).toLocaleString("ko-KR")}</td>
+                <td>{formatMoney(stock.avgPrice, stock.currency)}</td>
                 <td>{formatMoney(stock.currentPrice, stock.currency)}</td>
+                <td>{formatMoney(stock.totalCost, stock.currency)}</td>
                 <td>{formatMoney(stock.totalValue, stock.currency)}</td>
+                <td className={Number(stock.profitLoss || 0) >= 0 ? "font-black text-cyan-700 dark:text-cyan-300" : "font-black text-rose-600 dark:text-rose-300"}>
+                  {formatMoney(stock.profitLoss, stock.currency)}
+                </td>
                 <td className={Number(stock.profitLossRate || 0) >= 0 ? "font-black text-cyan-700" : "font-black text-rose-600"}>
                   {formatPercent(stock.profitLossRate)}
                 </td>
