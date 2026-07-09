@@ -16,9 +16,10 @@ def search_kr(keyword):
     from pykrx import stock
 
     today = datetime.now().strftime("%Y%m%d")
-    tickers = stock.get_market_ticker_list(today, market="ALL")
     results = []
     keyword_lower = keyword.lower()
+
+    tickers = stock.get_market_ticker_list(today, market="ALL")
     for ticker in tickers:
         name = stock.get_market_ticker_name(ticker)
         if keyword_lower in ticker.lower() or keyword_lower in name.lower():
@@ -34,7 +35,42 @@ def search_kr(keyword):
             })
         if len(results) >= 30:
             break
+
+    if len(results) < 30:
+        for ticker in get_etf_tickers(today):
+            name = get_etf_name(ticker)
+            if keyword_lower in ticker.lower() or keyword_lower in name.lower():
+                quote = quote_kr(ticker)
+                results.append({
+                    "market": "KR",
+                    "ticker": ticker,
+                    "name": name,
+                    "currency": "KRW",
+                    "exchange": "KRX ETF",
+                    "currentPrice": quote.get("currentPrice", 0),
+                    "dividendAvailable": False,
+                })
+            if len(results) >= 30:
+                break
     return results
+
+
+def get_etf_tickers(today):
+    from pykrx import stock
+
+    try:
+        return stock.get_etf_ticker_list(today)
+    except Exception:
+        return []
+
+
+def get_etf_name(ticker):
+    from pykrx import stock
+
+    try:
+        return stock.get_etf_ticker_name(ticker)
+    except Exception:
+        return ticker
 
 
 def find_close_column(frame):
@@ -49,23 +85,39 @@ def quote_kr(ticker):
 
     end = datetime.now()
     start = end - timedelta(days=14)
-    frame = stock.get_market_ohlcv_by_date(start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), ticker)
-    if frame.empty:
+    try:
+        name = stock.get_market_ticker_name(ticker)
+    except Exception:
+        name = get_etf_name(ticker)
+    source = "pykrx"
+    try:
+        frame = stock.get_market_ohlcv_by_date(start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), ticker)
+    except Exception:
+        frame = None
+
+    if frame is None or frame.empty:
+        try:
+            frame = stock.get_etf_ohlcv_by_date(start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), ticker)
+            name = get_etf_name(ticker)
+            source = "pykrx-etf"
+        except Exception:
+            frame = None
+
+    if frame is None or frame.empty:
         return {
             "market": "KR",
             "ticker": ticker,
-            "name": stock.get_market_ticker_name(ticker),
+            "name": name or get_etf_name(ticker),
             "currency": "KRW",
             "currentPrice": 0,
             "previousClose": 0,
             "changeRate": 0,
-            "source": "pykrx",
+            "source": source,
         }
 
     close = frame[find_close_column(frame)].dropna()
     current = as_float(close.iloc[-1]) if len(close) else 0
     previous = as_float(close.iloc[-2]) if len(close) > 1 else current
-    name = stock.get_market_ticker_name(ticker)
     change_rate = round(((current - previous) / previous) * 100, 2) if previous else 0
     return {
         "market": "KR",
@@ -75,7 +127,7 @@ def quote_kr(ticker):
         "currentPrice": current,
         "previousClose": previous,
         "changeRate": change_rate,
-        "source": "pykrx",
+        "source": source,
     }
 
 

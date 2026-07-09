@@ -219,6 +219,14 @@ public class DividendService {
 
         MarketDto.Quote quote = marketDataService.quote(market, ticker);
         BigDecimal dividendYield = quote != null && quote.dividendYield() != null ? quote.dividendYield() : BigDecimal.ZERO;
+        BigDecimal currentPrice = quote != null
+                && quote.currentPrice() != null
+                && quote.currentPrice().compareTo(BigDecimal.ZERO) > 0
+                ? quote.currentPrice()
+                : stock.getCurrentPrice();
+        if (currentPrice == null || currentPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            currentPrice = fallbackCurrentPrice(market, ticker, name);
+        }
         BigDecimal dividendPerShare = knownDividendPerShare(ticker);
         boolean hasKnownDividend = dividendPerShare.compareTo(BigDecimal.ZERO) > 0;
         DividendFrequency frequency = inferFrequency(market, ticker, name, hasKnownDividend ? BigDecimal.ONE : dividendYield);
@@ -232,8 +240,8 @@ public class DividendService {
             return AutoDividendEstimate.none();
         }
 
-        if (dividendPerShare.compareTo(BigDecimal.ZERO) <= 0 && quote != null && quote.currentPrice() != null) {
-            BigDecimal annualDividend = quote.currentPrice()
+        if (dividendPerShare.compareTo(BigDecimal.ZERO) <= 0 && currentPrice != null && currentPrice.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal annualDividend = currentPrice
                     .multiply(dividendYield)
                     .divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP);
             dividendPerShare = annualDividend.divide(BigDecimal.valueOf(paymentsPerYear(frequency)), 4, RoundingMode.HALF_UP);
@@ -274,6 +282,7 @@ public class DividendService {
                 || name.contains("월배당")
                 || name.contains("월분배")
                 || name.contains("월 지급")
+                || name.contains("커버드콜")
                 || upperName.contains("COVERED CALL")
                 || upperName.contains("PREMIUM INCOME")
                 || upperName.contains("YIELDMAX")
@@ -389,7 +398,8 @@ public class DividendService {
         if (List.of("NVDY", "TSLY", "CONY", "MSTY", "YMAX", "YMAG", "FEPI", "AIPI", "SPYI", "QQQI", "JEPY", "QQQY").contains(ticker)
                 || upperName.contains("COVERED CALL")
                 || upperName.contains("PREMIUM INCOME")
-                || upperName.contains("YIELDMAX")) {
+                || upperName.contains("YIELDMAX")
+                || name.contains("커버드콜")) {
             return BigDecimal.valueOf(8.0);
         }
         if (List.of("BIL", "SGOV", "USFR", "TLT", "IEF", "SHY", "BND", "AGG", "HYG", "LQD").contains(ticker)
@@ -406,7 +416,28 @@ public class DividendService {
         if (frequency == DividendFrequency.QUARTERLY && "KR".equals(market)) {
             return BigDecimal.valueOf(2.0);
         }
+        if ("KR".equals(market) && isKoreanFundLikeName(name)) {
+            return BigDecimal.valueOf(1.0);
+        }
         return BigDecimal.ZERO;
+    }
+
+    private BigDecimal fallbackCurrentPrice(String market, String ticker, String name) {
+        if (!"KR".equals(market)) return BigDecimal.ZERO;
+        if (name.contains("레버리지") || name.contains("인버스")) return BigDecimal.valueOf(5000);
+        if (isKoreanFundLikeName(name)) return BigDecimal.valueOf(10000);
+        return BigDecimal.ZERO;
+    }
+
+    private boolean isKoreanFundLikeName(String name) {
+        if (name == null) return false;
+        return List.of("KODEX", "TIGER", "RISE", "ACE", "SOL", "PLUS", "KBSTAR", "KOSEF", "HANARO", "TIMEFOLIO", "WON")
+                .stream()
+                .anyMatch(name::contains)
+                || name.contains("ETF")
+                || name.contains("ETN")
+                || name.contains("채권혼합")
+                || name.contains("단일종목");
     }
 
     private String inferMarket(Stock stock) {

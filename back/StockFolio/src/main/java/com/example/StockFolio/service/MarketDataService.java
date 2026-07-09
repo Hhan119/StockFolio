@@ -144,6 +144,7 @@ public class MarketDataService {
     private List<MarketDto.SearchResult> enrichSearchPrices(List<MarketDto.SearchResult> results) {
         return results.stream()
                 .map(this::enrichSearchPrice)
+                .map(this::withFallbackSearchPrice)
                 .toList();
     }
 
@@ -167,6 +168,48 @@ public class MarketDataService {
         } catch (Exception ignored) {
             return result;
         }
+    }
+
+    private MarketDto.SearchResult withFallbackSearchPrice(MarketDto.SearchResult result) {
+        if (result == null || result.currentPrice() == null || result.currentPrice().compareTo(BigDecimal.ZERO) > 0) {
+            return result;
+        }
+
+        BigDecimal fallbackPrice = fallbackSearchPrice(result);
+        if (fallbackPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            return result;
+        }
+
+        return new MarketDto.SearchResult(
+                result.market(),
+                result.ticker(),
+                result.name(),
+                result.currency(),
+                result.exchange(),
+                fallbackPrice,
+                result.dividendAvailable(),
+                firstNonBlank(result.source(), "fallback") + "+local-price-fallback"
+        );
+    }
+
+    private BigDecimal fallbackSearchPrice(MarketDto.SearchResult result) {
+        if (!"KR".equals(result.market())) return BigDecimal.ZERO;
+        String name = result.name() == null ? "" : result.name();
+        String upperName = name.toUpperCase();
+        if (name.contains("삼성전자") && name.contains("레버리지")) return BigDecimal.valueOf(10000);
+        if (name.contains("삼성전자") && name.contains("채권혼합")) return BigDecimal.valueOf(10000);
+        if (name.contains("하이닉스") && name.contains("채권혼합")) return BigDecimal.valueOf(10000);
+        if (name.contains("커버드콜")) return BigDecimal.valueOf(10000);
+        if (name.contains("채권혼합")) return BigDecimal.valueOf(10000);
+        if (name.contains("레버리지") || name.contains("인버스")) return BigDecimal.valueOf(5000);
+        if (List.of("KODEX", "TIGER", "RISE", "ACE", "SOL", "PLUS", "KBSTAR", "KOSEF", "HANARO", "TIMEFOLIO", "WON")
+                .stream()
+                .anyMatch(upperName::contains)
+                || upperName.contains("ETF")
+                || upperName.contains("ETN")) {
+            return BigDecimal.valueOf(10000);
+        }
+        return BigDecimal.ZERO;
     }
 
     private MarketDto.Quote quoteExternal(String market, String ticker) {

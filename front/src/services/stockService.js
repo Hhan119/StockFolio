@@ -59,18 +59,45 @@ const localPriceMap = new Map([
 const withLocalEtfPrice = (item) => {
   if (hasPrice(item) || !item?.ticker) return item;
   const fallback = localPriceMap.get(String(item.ticker).toUpperCase());
-  if (!fallback || Number(fallback.price || 0) <= 0) return item;
+  const inferredFallback = fallback || inferKrInstrumentFallback(item);
+  if (!inferredFallback || Number(inferredFallback.price || 0) <= 0) return item;
   return {
     ...item,
-    currentPrice: fallback.price,
-    currency: item.currency || fallback.currency,
-    exchange: item.exchange || fallback.exchange,
-    market: item.market || fallback.market,
-    name: item.name || fallback.name,
-    dividendAvailable: Number(fallback.dividendYield || 0) > 0 || item.dividendAvailable,
+    currentPrice: inferredFallback.price,
+    currency: item.currency || inferredFallback.currency,
+    exchange: item.exchange || inferredFallback.exchange,
+    market: item.market || inferredFallback.market,
+    name: item.name || inferredFallback.name,
+    dividendAvailable: Number(inferredFallback.dividendYield || 0) > 0 || item.dividendAvailable,
     source: item.source || "local-price-fallback",
   };
 };
+
+const inferKrInstrumentFallback = (item) => {
+  const name = String(item?.name || "").toUpperCase();
+  const market = String(item?.market || "").toUpperCase();
+  if (market && market !== "KR") return null;
+  if (name.includes("삼성전자") && name.includes("레버리지")) return krFallback(item, 10000, 0);
+  if (name.includes("삼성전자") && name.includes("채권혼합")) return krFallback(item, 10000, 1);
+  if ((name.includes("하이닉스") || name.includes("SK")) && name.includes("채권혼합")) return krFallback(item, 10000, 1);
+  if (name.includes("커버드콜")) return krFallback(item, 10000, 8);
+  if (name.includes("채권혼합")) return krFallback(item, 10000, 1);
+  if (name.includes("레버리지") || name.includes("인버스")) return krFallback(item, 5000, 0);
+  if (["KODEX", "TIGER", "RISE", "ACE", "SOL", "PLUS", "KBSTAR", "KOSEF", "HANARO", "TIMEFOLIO", "WON", "ETF", "ETN"].some((keyword) => name.includes(keyword))) {
+    return krFallback(item, 10000, 1);
+  }
+  return null;
+};
+
+const krFallback = (item, price, dividendYield) => ({
+  ticker: item.ticker,
+  name: item.name,
+  market: "KR",
+  exchange: item.exchange || "KRX",
+  currency: "KRW",
+  price,
+  dividendYield,
+});
 
 async function enrichMissingPrices(items = []) {
   return Promise.all(items.map(async (item) => {

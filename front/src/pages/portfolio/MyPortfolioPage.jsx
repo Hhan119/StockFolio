@@ -437,7 +437,7 @@ function MyPortfolioPage() {
             <div className="hidden overflow-x-auto lg:block">
               <table className="w-full min-w-[1240px] border-collapse text-sm">
                 <thead className="bg-slate-950 text-left text-xs uppercase tracking-wider text-slate-500">
-                  <tr><th className="px-4 py-3">종목명</th><th>티커</th><th>구분</th><th>수량</th><th>평균단가</th><th>현재가</th><th>평가금액</th><th>손익</th><th>수익률</th><th>배당주기</th><th>주당 분배금</th><th>관리</th></tr>
+                  <tr><th className="px-4 py-3">종목명</th><th>티커</th><th>구분</th><th>수량</th><th>평균단가</th><th>현재가</th><th>평가금액</th><th>손익</th><th>수익률</th><th>배당주기</th><th>주당 분배금(1회)</th><th>관리</th></tr>
                 </thead>
                 <tbody>
                   {filteredStocks.map((stock) => {
@@ -478,7 +478,7 @@ function MyPortfolioPage() {
                   <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3" key={stock.id}>
                     <div className="flex justify-between gap-3"><strong>{stock.name}</strong><span className={Number(stock.profitLossRate) >= 0 ? "font-black text-cyan-300" : "font-black text-rose-300"}>{formatPercent(stock.profitLossRate)}</span></div>
                     <p className="mt-1 text-sm font-bold text-slate-500">{stock.ticker}</p>
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-sm"><span>수량 {stock.quantity}</span><span>평가 {formatMoney(stock.totalValue, stock.currency)}</span><span>평단 {formatMoney(stock.avgPrice, stock.currency)}</span><span>현재 {formatMoney(stock.currentPrice, stock.currency)}</span><span>배당 {formatDividendFrequency(dividendInfo?.frequency)}</span><span>주당 {dividendInfo ? formatMoney(dividendInfo.dividendPerShare, stock.currency) : "-"}</span></div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-sm"><span>수량 {stock.quantity}</span><span>평가 {formatMoney(stock.totalValue, stock.currency)}</span><span>평단 {formatMoney(stock.avgPrice, stock.currency)}</span><span>현재 {formatMoney(stock.currentPrice, stock.currency)}</span><span>배당 {formatDividendFrequency(dividendInfo?.frequency)}</span><span>1회 주당 {dividendInfo ? formatMoney(dividendInfo.dividendPerShare, stock.currency) : "-"}</span></div>
                     <div className="mt-3 grid grid-cols-2 gap-2">
                       <button className="rounded-xl bg-slate-800 px-3 py-2 text-sm font-black text-slate-200 hover:bg-cyan-500 hover:text-slate-950" onClick={() => openEditHolding(stock)} type="button">수정</button>
                       <button className="rounded-xl bg-slate-800 px-3 py-2 text-sm font-black text-slate-200 hover:bg-rose-600 hover:text-white" onClick={() => removeHolding(stock)} type="button">제거</button>
