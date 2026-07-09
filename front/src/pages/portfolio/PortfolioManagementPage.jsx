@@ -308,7 +308,7 @@ function PortfolioManagementPage() {
         </p>
       )}
 
-      <div className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
         <main className="grid min-w-0 gap-4">
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="grid gap-4 xl:grid-cols-2">
@@ -486,8 +486,8 @@ function PortfolioManagementPage() {
           />
         </main>
 
-        <aside className="grid min-w-0 content-start gap-4">
-          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <aside className="grid min-w-0 max-w-full content-start gap-4">
+          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-black uppercase tracking-wider text-cyan-700 dark:text-cyan-300">Saved</p>
@@ -495,12 +495,30 @@ function PortfolioManagementPage() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700 dark:bg-slate-800 dark:text-slate-300">{portfolios.length}개</span>
-                <button className="btn-muted px-3 py-1.5 text-xs 2xl:hidden" type="button" onClick={() => setSavedPanelOpen((open) => !open)}>
+                <button className="btn-muted px-3 py-1.5 text-xs" type="button" onClick={() => setSavedPanelOpen((open) => !open)}>
                   {savedPanelOpen ? "접기" : "보기"}
                 </button>
               </div>
             </div>
-            <div className={`${savedPanelOpen ? "grid" : "hidden 2xl:grid"} mt-4 max-h-[620px] gap-2 overflow-y-auto pr-1`}>
+            {!savedPanelOpen && selectedSummary && (
+              <button
+                className="mt-4 w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-cyan-300 hover:bg-cyan-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-cyan-800 dark:hover:bg-cyan-950"
+                onClick={() => setSavedPanelOpen(true)}
+                type="button"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">선택됨</p>
+                    <strong className="mt-1 block truncate text-base font-black text-slate-950 dark:text-white">{selectedSummary.name}</strong>
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{selectedSummary.stockCount}개 종목</span>
+                  </div>
+                  <span className={Number(selectedSummary.totalProfitLoss || 0) >= 0 ? "text-xs font-black text-cyan-700 dark:text-cyan-300" : "text-xs font-black text-rose-600 dark:text-rose-300"}>
+                    {formatPercent(selectedSummary.totalProfitLossRate)}
+                  </span>
+                </div>
+              </button>
+            )}
+            <div className={`${savedPanelOpen ? "grid" : "hidden"} mt-4 max-h-[620px] gap-2 overflow-y-auto pr-1`}>
               {portfolios.map((portfolio) => {
                 const active = String(portfolio.id) === String(selectedId);
                 const profit = Number(portfolio.totalProfitLoss || 0);
@@ -508,7 +526,10 @@ function PortfolioManagementPage() {
                   <button
                     className={`rounded-2xl border p-4 text-left transition ${active ? "border-cyan-400 bg-cyan-50 text-cyan-950 dark:bg-cyan-950 dark:text-cyan-100" : "border-slate-200 bg-slate-50 text-slate-900 hover:border-slate-300 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"}`}
                     key={portfolio.id}
-                    onClick={() => setSelectedId(String(portfolio.id))}
+                    onClick={() => {
+                      setSelectedId(String(portfolio.id));
+                      setSavedPanelOpen(false);
+                    }}
                     type="button"
                   >
                     <div className="flex items-start justify-between gap-3">

@@ -99,7 +99,9 @@ public class DividendService {
         dividendRepository.delete(dividend);
     }
 
+    @Transactional
     public DividendDto.AnnualSummary getAnnualSummary(Long portfolioId, Long userId) {
+        backfillAutoDividends(portfolioId, userId);
         List<DividendDto.Response> items = getByPortfolio(portfolioId, userId);
         List<DividendDto.MonthlySummary> monthly = new ArrayList<>();
 
@@ -141,6 +143,19 @@ public class DividendService {
                 .dividendStockCount(dividendStockCount)
                 .monthly(monthly)
                 .build();
+    }
+
+    private void backfillAutoDividends(Long portfolioId, Long userId) {
+        stockRepository.findByPortfolioIdAndUserId(portfolioId, userId).forEach(stock -> {
+            if (dividendRepository.existsByStockId(stock.getId())) {
+                return;
+            }
+            try {
+                addAutoDividendIfAvailable(stock.getId(), userId);
+            } catch (Exception ignored) {
+                // Dividend inference should never block portfolio summary rendering.
+            }
+        });
     }
 
     private DividendDto.Response toResponse(Dividend dividend) {
@@ -235,6 +250,7 @@ public class DividendService {
         if (dividendYield == null || dividendYield.compareTo(BigDecimal.ZERO) <= 0) return null;
         if (isMonthlyDividend(ticker, name)) return DividendFrequency.MONTHLY;
         if (isSemiAnnualDividend(ticker, name)) return DividendFrequency.SEMI_ANNUAL;
+        if (isQuarterlyDividend(ticker, name)) return DividendFrequency.QUARTERLY;
         if ("US".equals(market)) return DividendFrequency.QUARTERLY;
         if (List.of("005930", "005935", "000660").contains(ticker)) return DividendFrequency.QUARTERLY;
         return DividendFrequency.ANNUAL;
@@ -242,8 +258,14 @@ public class DividendService {
 
     private boolean isMonthlyDividend(String ticker, String name) {
         String upperName = name.toUpperCase();
-        return List.of("O", "JEPI", "JEPQ", "QYLD", "RYLD", "XYLD", "MAIN", "STAG").contains(ticker)
+        return List.of(
+                "O", "JEPI", "JEPQ", "QYLD", "RYLD", "XYLD", "DGRW", "DIVO", "DIA",
+                "MAIN", "STAG", "PFF", "TLT", "IEF", "SHY", "BND", "AGG", "HYG", "LQD",
+                "458730", "402970", "305080", "148070"
+        ).contains(ticker)
                 || name.contains("월배당")
+                || name.contains("월분배")
+                || name.contains("월 지급")
                 || upperName.contains("MONTHLY");
     }
 
@@ -252,6 +274,16 @@ public class DividendService {
         return upperName.contains("SEMI")
                 || name.contains("반기")
                 || List.of("005380", "000270").contains(ticker);
+    }
+
+    private boolean isQuarterlyDividend(String ticker, String name) {
+        String upperName = name.toUpperCase();
+        return List.of(
+                "SCHD", "VOO", "QQQM", "VYM", "HDV", "SPY", "VTI", "QQQ",
+                "DGRO", "NOBL", "SDY", "005930", "005935", "000660", "379800"
+        ).contains(ticker)
+                || name.contains("분기")
+                || upperName.contains("QUARTERLY");
     }
 
     private int paymentsPerYear(DividendFrequency frequency) {
@@ -267,7 +299,8 @@ public class DividendService {
         if (frequency == DividendFrequency.MONTHLY) return 1;
         if (List.of("005930", "005935", "000660").contains(ticker)) return 4;
         if ("AAPL".equals(ticker)) return 2;
-        if ("SCHD".equals(ticker)) return 3;
+        if (List.of("379800").contains(ticker)) return 1;
+        if (List.of("SCHD", "VOO", "QQQM", "VYM", "HDV", "SPY", "VTI", "QQQ", "DGRO", "NOBL", "SDY").contains(ticker)) return 3;
         if (frequency == DividendFrequency.SEMI_ANNUAL) return "KR".equals(market) ? 6 : 3;
         if (frequency == DividendFrequency.QUARTERLY) return "KR".equals(market) ? 4 : 3;
         return "KR".equals(market) ? 4 : 12;
@@ -278,9 +311,36 @@ public class DividendService {
             case "005930", "005935" -> BigDecimal.valueOf(361);
             case "000660" -> BigDecimal.valueOf(300);
             case "AAPL" -> BigDecimal.valueOf(0.26);
-            case "SCHD" -> BigDecimal.valueOf(0.82);
-            case "JEPI" -> BigDecimal.valueOf(0.40);
-            case "JEPQ" -> BigDecimal.valueOf(0.45);
+            case "SCHD" -> BigDecimal.valueOf(0.61);
+            case "JEPI" -> BigDecimal.valueOf(0.36);
+            case "JEPQ" -> BigDecimal.valueOf(0.42);
+            case "VOO" -> BigDecimal.valueOf(1.78);
+            case "QQQM" -> BigDecimal.valueOf(0.32);
+            case "VYM" -> BigDecimal.valueOf(0.72);
+            case "HDV" -> BigDecimal.valueOf(0.85);
+            case "SPY" -> BigDecimal.valueOf(1.76);
+            case "VTI" -> BigDecimal.valueOf(0.91);
+            case "DIA" -> BigDecimal.valueOf(0.73);
+            case "DGRO" -> BigDecimal.valueOf(0.34);
+            case "DGRW" -> BigDecimal.valueOf(0.10);
+            case "DIVO" -> BigDecimal.valueOf(0.16);
+            case "QYLD" -> BigDecimal.valueOf(0.17);
+            case "XYLD" -> BigDecimal.valueOf(0.31);
+            case "RYLD" -> BigDecimal.valueOf(0.16);
+            case "NOBL" -> BigDecimal.valueOf(0.49);
+            case "SDY" -> BigDecimal.valueOf(0.78);
+            case "TLT" -> BigDecimal.valueOf(0.31);
+            case "IEF" -> BigDecimal.valueOf(0.25);
+            case "SHY" -> BigDecimal.valueOf(0.29);
+            case "BND" -> BigDecimal.valueOf(0.22);
+            case "AGG" -> BigDecimal.valueOf(0.30);
+            case "HYG" -> BigDecimal.valueOf(0.38);
+            case "LQD" -> BigDecimal.valueOf(0.39);
+            case "379800" -> BigDecimal.valueOf(45);
+            case "458730" -> BigDecimal.valueOf(35);
+            case "402970" -> BigDecimal.valueOf(34);
+            case "305080" -> BigDecimal.valueOf(35);
+            case "148070" -> BigDecimal.valueOf(1450);
             case "O" -> BigDecimal.valueOf(0.27);
             default -> BigDecimal.ZERO;
         };

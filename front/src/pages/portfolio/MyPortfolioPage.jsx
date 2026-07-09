@@ -67,7 +67,16 @@ function MyPortfolioPage() {
   const loadPortfolios = async () => {
     const data = await portfolioService.list();
     setPortfolios(data);
-    if (!selectedPortfolioId && data.length) setSelectedPortfolioId(String(data[0].id));
+    const nextId = selectedPortfolioId && data.some((portfolio) => String(portfolio.id) === String(selectedPortfolioId))
+      ? String(selectedPortfolioId)
+      : data.length
+        ? String(data[0].id)
+        : "";
+    setSelectedPortfolioId(nextId);
+    if (!nextId) {
+      setDetail(null);
+      setDividendSummary(null);
+    }
   };
 
   const loadDetail = async (portfolioId) => {
@@ -195,7 +204,29 @@ function MyPortfolioPage() {
           <h2 className="text-2xl font-black text-white sm:text-3xl">보유자산</h2>
           <p className="mt-1 max-w-3xl text-sm font-bold text-slate-400">모바일, 태블릿, 노트북, 데스크탑 화면에 맞춰 자산과 보유종목을 정리합니다.</p>
         </div>
-        <button className="rounded-2xl bg-cyan-500 px-4 py-2.5 text-sm font-black text-slate-950 shadow-sm hover:bg-cyan-300" onClick={refreshPrices} disabled={loading}>현재가 갱신</button>
+        <div className="grid w-full gap-2 sm:w-auto sm:min-w-[280px]">
+          <label className="grid gap-1 text-xs font-black uppercase tracking-wider text-slate-500">
+            포트폴리오 선택
+            <select
+              className="form-control border-slate-800 bg-slate-900 text-sm font-black text-white"
+              disabled={!portfolios.length || loading}
+              value={selectedPortfolioId}
+              onChange={(event) => {
+                setSelectedPortfolioId(event.target.value);
+                setMessage("");
+                setError("");
+              }}
+            >
+              {!portfolios.length && <option value="">저장된 포트폴리오 없음</option>}
+              {portfolios.map((portfolio) => (
+                <option key={portfolio.id} value={portfolio.id}>
+                  {portfolio.name} · {portfolio.stockCount || 0}개 종목
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="rounded-2xl bg-cyan-500 px-4 py-2.5 text-sm font-black text-slate-950 shadow-sm hover:bg-cyan-300" onClick={refreshPrices} disabled={loading || !selectedPortfolioId}>현재가 갱신</button>
+        </div>
       </div>
 
       <section className="mb-4 overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900 shadow-sm">
