@@ -1,4 +1,5 @@
-import { Navigate, Route, BrowserRouter as Router, Routes } from "react-router-dom";
+import { useEffect } from "react";
+import { Navigate, Route, BrowserRouter as Router, Routes, useLocation } from "react-router-dom";
 import AppLayout from "./layouts/AppLayout.jsx";
 import HomePage from "./pages/HomePage.jsx";
 import NotFoundPage from "./pages/NotFoundPage.jsx";
@@ -36,10 +37,22 @@ import TermsPage from "./pages/legal/TermsPage.jsx";
 import DisclaimerPage from "./pages/legal/DisclaimerPage.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
 
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0 });
+    document.querySelector("[data-app-scroll]")?.scrollTo?.({ top: 0, left: 0 });
+  }, [pathname]);
+
+  return null;
+}
+
 function App() {
   return (
     
     <Router>
+      <ScrollToTop />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route element={<AppLayout />}>

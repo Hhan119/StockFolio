@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { navigationGroups } from "../data/navigation.js";
+import { getActiveNavigationItem } from "../data/navigation.js";
 import { useAuthStore } from "../store/authStore.js";
 
 function Navbar() {
@@ -7,10 +7,7 @@ function Navbar() {
   const location = useLocation();
   const user = useAuthStore((state) => state.user);
   const logoutStore = useAuthStore((state) => state.logout);
-  const active = navigationGroups
-    .flatMap((group) => group.items)
-    .filter((item) => location.pathname === item.path || (item.path !== "/" && location.pathname.startsWith(`${item.path}/`)))
-    .sort((a, b) => b.path.length - a.path.length)[0];
+  const active = getActiveNavigationItem(location.pathname);
 
   const logout = () => {
     logoutStore();

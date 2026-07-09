@@ -4,16 +4,21 @@ export const navigationGroups = [
     items: [{ label: "홈", path: "/" }],
   },
   {
-    label: "계산기",
+    label: "포트폴리오",
     items: [
-      { label: "ETF 배당 계산기", path: "/calculators/etf-dividend" },
-      { label: "월배당 계산기", path: "/calculators/monthly-dividend" },
-      { label: "FIRE 계산기", path: "/calculators/fire" },
-      { label: "은퇴 계산기", path: "/calculators/retirement" },
-      { label: "적립식 투자 계산기", path: "/calculators/dca" },
-      { label: "복리 계산기", path: "/calculators/compound" },
-      { label: "배당 재투자 계산기", path: "/calculators/dividend-reinvestment" },
-      { label: "평단가 계산기", path: "/calculators/average-price" },
+      { label: "내 포트폴리오", path: "/portfolio/my" },
+      { label: "보유 종목", path: "/portfolio/holdings" },
+      { label: "월 배당 캘린더", path: "/portfolio/monthly-calendar" },
+      { label: "배당 성장 추적기", path: "/portfolio/dividend-growth" },
+    ],
+  },
+  {
+    label: "분석",
+    items: [
+      { label: "포트폴리오 분석", path: "/analysis/portfolio" },
+      { label: "배당 분석", path: "/analysis/dividend" },
+      { label: "리밸런싱", path: "/analysis/rebalancing" },
+      { label: "AI 분석", path: "/analysis/ai" },
     ],
   },
   {
@@ -37,25 +42,20 @@ export const navigationGroups = [
     ],
   },
   {
-    label: "포트폴리오",
+    label: "계산기",
     items: [
-      { label: "내 포트폴리오", path: "/portfolio/my" },
-      { label: "보유 종목", path: "/portfolio/holdings" },
-      { label: "월 배당 캘린더", path: "/portfolio/monthly-calendar" },
-      { label: "배당 성장 추적기", path: "/portfolio/dividend-growth" },
+      { label: "ETF 배당 계산기", path: "/calculators/etf-dividend" },
+      { label: "월배당 계산기", path: "/calculators/monthly-dividend" },
+      { label: "FIRE 계산기", path: "/calculators/fire" },
+      { label: "은퇴 계산기", path: "/calculators/retirement" },
+      { label: "적립식 투자 계산기", path: "/calculators/dca" },
+      { label: "복리 계산기", path: "/calculators/compound" },
+      { label: "배당 재투자 계산기", path: "/calculators/dividend-reinvestment" },
+      { label: "평단가 계산기", path: "/calculators/average-price" },
     ],
   },
   {
-    label: "분석",
-    items: [
-      { label: "포트폴리오 분석", path: "/analysis/portfolio" },
-      { label: "배당 분석", path: "/analysis/dividend" },
-      { label: "리밸런싱", path: "/analysis/rebalancing" },
-      { label: "AI 분석", path: "/analysis/ai" },
-    ],
-  },
-  {
-    label: "콘텐츠",
+    label: "서비스",
     items: [
       { label: "블로그", path: "/blog" },
       { label: "서비스 소개", path: "/about" },
@@ -66,3 +66,30 @@ export const navigationGroups = [
     ],
   },
 ];
+
+export function isNavigationItemActive(pathname, item) {
+  if (item.path === "/") return pathname === "/";
+  if (pathname === item.path) return true;
+
+  if (item.path === "/blog") {
+    return pathname.startsWith("/blog/");
+  }
+
+  if (item.path === "/etf/compare") {
+    return pathname.startsWith("/etf/compare/");
+  }
+
+  if (item.path === "/etf") {
+    const detailMatch = pathname.match(/^\/etf\/([^/]+)$/);
+    return Boolean(detailMatch && !["search", "compare", "rankings"].includes(detailMatch[1]));
+  }
+
+  return false;
+}
+
+export function getActiveNavigationItem(pathname) {
+  return navigationGroups
+    .flatMap((group) => group.items)
+    .filter((item) => isNavigationItemActive(pathname, item))
+    .sort((a, b) => b.path.length - a.path.length)[0];
+}

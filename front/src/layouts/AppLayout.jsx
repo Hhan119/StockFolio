@@ -8,7 +8,7 @@ function AppLayout() {
     <div className="min-h-screen bg-slate-100 text-slate-950 dark:bg-slate-950 dark:text-slate-100">
       <div className="flex min-h-screen">
         <Sidebar />
-        <main className="min-w-0 flex-1">
+        <main className="min-w-0 flex-1" data-app-scroll>
           <Navbar />
           <MobileNav />
           <div className="p-4 lg:p-7">
