@@ -67,6 +67,15 @@ function PortfolioManagementPage() {
     loadSelectedDetail(selectedId).catch(() => setError("선택한 포트폴리오를 불러오지 못했습니다."));
   }, [selectedId]);
 
+  useEffect(() => {
+    if (!editingStock) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") closeEditStock();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [editingStock]);
+
   const searchStocks = async (event) => {
     event.preventDefault();
     if (!keyword.trim()) return;
@@ -221,7 +230,9 @@ function PortfolioManagementPage() {
 
   const savePortfolio = async () => {
     if (!portfolioForm.name.trim()) {
-      setError("포트폴리오 이름을 입력해주세요.");
+      const nextError = "포트폴리오 이름을 입력해주세요.";
+      window.alert(nextError);
+      setError(nextError);
       return;
     }
     if (!draftHoldings.length) {

@@ -222,6 +222,12 @@ public class DividendService {
         BigDecimal dividendPerShare = knownDividendPerShare(ticker);
         boolean hasKnownDividend = dividendPerShare.compareTo(BigDecimal.ZERO) > 0;
         DividendFrequency frequency = inferFrequency(market, ticker, name, hasKnownDividend ? BigDecimal.ONE : dividendYield);
+        if (frequency == null) {
+            frequency = inferFrequency(market, ticker, name, BigDecimal.ONE);
+        }
+        if (!hasKnownDividend && dividendYield.compareTo(BigDecimal.ZERO) <= 0) {
+            dividendYield = fallbackDividendYield(market, ticker, name, frequency);
+        }
         if (frequency == null || (!hasKnownDividend && dividendYield.compareTo(BigDecimal.ZERO) <= 0)) {
             return AutoDividendEstimate.none();
         }
@@ -261,11 +267,16 @@ public class DividendService {
         return List.of(
                 "O", "JEPI", "JEPQ", "QYLD", "RYLD", "XYLD", "DGRW", "DIVO", "DIA",
                 "MAIN", "STAG", "PFF", "TLT", "IEF", "SHY", "BND", "AGG", "HYG", "LQD",
+                "NVDY", "TSLY", "CONY", "MSTY", "YMAX", "YMAG", "FEPI", "AIPI", "SPYI", "QQQI",
+                "JEPY", "QQQY", "XDTE", "QDTE", "RDTE", "BIL", "SGOV", "USFR",
                 "458730", "402970", "305080", "148070"
         ).contains(ticker)
                 || name.contains("월배당")
                 || name.contains("월분배")
                 || name.contains("월 지급")
+                || upperName.contains("COVERED CALL")
+                || upperName.contains("PREMIUM INCOME")
+                || upperName.contains("YIELDMAX")
                 || upperName.contains("MONTHLY");
     }
 
@@ -280,7 +291,8 @@ public class DividendService {
         String upperName = name.toUpperCase();
         return List.of(
                 "SCHD", "VOO", "QQQM", "VYM", "HDV", "SPY", "VTI", "QQQ",
-                "DGRO", "NOBL", "SDY", "005930", "005935", "000660", "379800"
+                "DGRO", "NOBL", "SDY", "IVV", "SPLG", "VIG", "VUG", "IWM", "VNQ",
+                "EFA", "EEM", "005930", "005935", "000660", "379800"
         ).contains(ticker)
                 || name.contains("분기")
                 || upperName.contains("QUARTERLY");
@@ -300,7 +312,7 @@ public class DividendService {
         if (List.of("005930", "005935", "000660").contains(ticker)) return 4;
         if ("AAPL".equals(ticker)) return 2;
         if (List.of("379800").contains(ticker)) return 1;
-        if (List.of("SCHD", "VOO", "QQQM", "VYM", "HDV", "SPY", "VTI", "QQQ", "DGRO", "NOBL", "SDY").contains(ticker)) return 3;
+        if (List.of("SCHD", "VOO", "QQQM", "VYM", "HDV", "SPY", "VTI", "QQQ", "DGRO", "NOBL", "SDY", "IVV", "SPLG", "VIG", "VUG", "IWM", "VNQ", "EFA", "EEM").contains(ticker)) return 3;
         if (frequency == DividendFrequency.SEMI_ANNUAL) return "KR".equals(market) ? 6 : 3;
         if (frequency == DividendFrequency.QUARTERLY) return "KR".equals(market) ? 4 : 3;
         return "KR".equals(market) ? 4 : 12;
@@ -336,6 +348,32 @@ public class DividendService {
             case "AGG" -> BigDecimal.valueOf(0.30);
             case "HYG" -> BigDecimal.valueOf(0.38);
             case "LQD" -> BigDecimal.valueOf(0.39);
+            case "NVDY" -> BigDecimal.valueOf(0.95);
+            case "TSLY" -> BigDecimal.valueOf(0.62);
+            case "CONY" -> BigDecimal.valueOf(1.10);
+            case "MSTY" -> BigDecimal.valueOf(1.85);
+            case "YMAX" -> BigDecimal.valueOf(0.18);
+            case "YMAG" -> BigDecimal.valueOf(0.16);
+            case "FEPI" -> BigDecimal.valueOf(1.05);
+            case "AIPI" -> BigDecimal.valueOf(1.35);
+            case "SPYI" -> BigDecimal.valueOf(0.50);
+            case "QQQI" -> BigDecimal.valueOf(0.62);
+            case "JEPY" -> BigDecimal.valueOf(0.55);
+            case "QQQY" -> BigDecimal.valueOf(0.70);
+            case "XDTE" -> BigDecimal.valueOf(0.20);
+            case "QDTE" -> BigDecimal.valueOf(0.25);
+            case "RDTE" -> BigDecimal.valueOf(0.22);
+            case "BIL" -> BigDecimal.valueOf(0.32);
+            case "SGOV" -> BigDecimal.valueOf(0.43);
+            case "USFR" -> BigDecimal.valueOf(0.23);
+            case "IVV" -> BigDecimal.valueOf(1.78);
+            case "SPLG" -> BigDecimal.valueOf(0.22);
+            case "VIG" -> BigDecimal.valueOf(0.77);
+            case "VUG" -> BigDecimal.valueOf(0.46);
+            case "IWM" -> BigDecimal.valueOf(0.74);
+            case "VNQ" -> BigDecimal.valueOf(0.95);
+            case "EFA" -> BigDecimal.valueOf(0.75);
+            case "EEM" -> BigDecimal.valueOf(0.45);
             case "379800" -> BigDecimal.valueOf(45);
             case "458730" -> BigDecimal.valueOf(35);
             case "402970" -> BigDecimal.valueOf(34);
@@ -344,6 +382,31 @@ public class DividendService {
             case "O" -> BigDecimal.valueOf(0.27);
             default -> BigDecimal.ZERO;
         };
+    }
+
+    private BigDecimal fallbackDividendYield(String market, String ticker, String name, DividendFrequency frequency) {
+        String upperName = name == null ? "" : name.toUpperCase();
+        if (List.of("NVDY", "TSLY", "CONY", "MSTY", "YMAX", "YMAG", "FEPI", "AIPI", "SPYI", "QQQI", "JEPY", "QQQY").contains(ticker)
+                || upperName.contains("COVERED CALL")
+                || upperName.contains("PREMIUM INCOME")
+                || upperName.contains("YIELDMAX")) {
+            return BigDecimal.valueOf(8.0);
+        }
+        if (List.of("BIL", "SGOV", "USFR", "TLT", "IEF", "SHY", "BND", "AGG", "HYG", "LQD").contains(ticker)
+                || upperName.contains("TREASURY")
+                || upperName.contains("BOND")) {
+            return BigDecimal.valueOf(3.5);
+        }
+        if (frequency == DividendFrequency.MONTHLY && ("US".equals(market) || "KR".equals(market))) {
+            return BigDecimal.valueOf(2.5);
+        }
+        if (frequency == DividendFrequency.QUARTERLY && "US".equals(market)) {
+            return BigDecimal.valueOf(1.5);
+        }
+        if (frequency == DividendFrequency.QUARTERLY && "KR".equals(market)) {
+            return BigDecimal.valueOf(2.0);
+        }
+        return BigDecimal.ZERO;
     }
 
     private String inferMarket(Stock stock) {

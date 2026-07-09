@@ -6,6 +6,14 @@ import { formatMoney, formatPercent } from "../../utils/format.js";
 
 const chartColors = ["#22d3ee", "#34d399", "#60a5fa", "#f59e0b", "#fb7185", "#a78bfa", "#94a3b8"];
 const monthLabels = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
+const emptyEditHoldingForm = { quantity: 1, avgPrice: "", currentPrice: "", currency: "KRW", memo: "" };
+const dividendFrequencyLabels = {
+  MONTHLY: "월배당",
+  QUARTERLY: "분기배당",
+  SEMI_ANNUAL: "반기배당",
+  ANNUAL: "연배당",
+  SPECIAL: "특별배당",
+};
 
 function isKoreanStock(stock) {
   return stock.currency === "KRW" || /^\d{5}[0-9A-Z]$/i.test(stock.ticker || "") || stock.market === "KR";
@@ -22,6 +30,31 @@ function buildPie(stocks = []) {
     return `${chartColors[index % chartColors.length]} ${start}% ${end}%`;
   });
   return total > 0 ? `conic-gradient(${stops.join(", ")})` : "conic-gradient(#334155 0% 100%)";
+}
+
+function buildDividendInfoMap(summary) {
+  const map = new Map();
+  (summary?.monthly || []).forEach((month) => {
+    (month.items || []).forEach((item) => {
+      const info = {
+        frequency: item.frequency,
+        dividendPerShare: item.dividendPerShare,
+      };
+      if (item.stockId) map.set(`id:${item.stockId}`, info);
+      if (item.stockTicker) map.set(`ticker:${String(item.stockTicker).toUpperCase()}`, info);
+    });
+  });
+  return map;
+}
+
+function dividendInfoFor(stock, dividendInfoMap) {
+  return dividendInfoMap.get(`id:${stock.id}`)
+    || dividendInfoMap.get(`ticker:${String(stock.ticker || "").toUpperCase()}`)
+    || null;
+}
+
+function formatDividendFrequency(frequency) {
+  return dividendFrequencyLabels[frequency] || "배당 없음";
 }
 
 function DarkMetric({ label, value, tone = "default" }) {
@@ -45,6 +78,8 @@ function MyPortfolioPage() {
   const [results, setResults] = useState([]);
   const [modalStock, setModalStock] = useState(null);
   const [holdingForm, setHoldingForm] = useState({ quantity: 1, averagePrice: "", currency: "USD", memo: "" });
+  const [editingStock, setEditingStock] = useState(null);
+  const [editHoldingForm, setEditHoldingForm] = useState(emptyEditHoldingForm);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -63,6 +98,7 @@ function MyPortfolioPage() {
   const estimatedAnnualDividend = Number(dividendSummary?.annualEstimated || 0);
   const pieStyle = useMemo(() => ({ background: buildPie(filteredStocks) }), [filteredStocks]);
   const topHoldings = [...filteredStocks].sort((a, b) => Number(b.totalValue || 0) - Number(a.totalValue || 0)).slice(0, 5);
+  const dividendInfoMap = useMemo(() => buildDividendInfoMap(dividendSummary), [dividendSummary]);
 
   const loadPortfolios = async () => {
     const data = await portfolioService.list();
@@ -195,6 +231,69 @@ function MyPortfolioPage() {
       setLoading(false);
     }
   };
+
+  const openEditHolding = (stock) => {
+    setEditingStock(stock);
+    setEditHoldingForm({
+      quantity: stock.quantity || 1,
+      avgPrice: stock.avgPrice || "",
+      currentPrice: stock.currentPrice || "",
+      currency: stock.currency || "KRW",
+      memo: stock.memo || "",
+    });
+  };
+
+  const closeEditHolding = () => {
+    setEditingStock(null);
+    setEditHoldingForm(emptyEditHoldingForm);
+  };
+
+  const updateHolding = async (event) => {
+    event.preventDefault();
+    if (!editingStock) return;
+
+    const quantity = Number(editHoldingForm.quantity || 0);
+    const avgPrice = Number(editHoldingForm.avgPrice || 0);
+    const currentPrice = Number(editHoldingForm.currentPrice || 0);
+    if (quantity <= 0 || avgPrice <= 0) {
+      setError("수량과 평균 매수가는 0보다 커야 합니다.");
+      return;
+    }
+
+    setLoading(true);
+    setMessage("");
+    setError("");
+    try {
+      const editedName = editingStock.name;
+      await portfolioService.updateStock(editingStock.id, {
+        ticker: editingStock.ticker,
+        name: editingStock.name,
+        quantity,
+        avgPrice,
+        currentPrice: currentPrice > 0 ? currentPrice : avgPrice,
+        sector: editingStock.sector,
+        currency: editHoldingForm.currency || editingStock.currency,
+        memo: editHoldingForm.memo,
+      });
+      closeEditHolding();
+      await loadPortfolios();
+      await loadDetail(selectedPortfolioId);
+      setMessage(`${editedName} 보유종목을 수정했습니다.`);
+    } catch {
+      setError("보유종목 수정에 실패했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!editingStock) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") closeEditHolding();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [editingStock]);
 
   return (
     <section className="rounded-2xl bg-slate-950 p-3 text-slate-100 ring-1 ring-slate-800/80 sm:p-4 lg:p-5">
@@ -336,29 +435,60 @@ function MyPortfolioPage() {
               <p className="mt-1 text-sm font-bold text-slate-500">동일 종목은 수량과 평균단가가 자동 합산됩니다.</p>
             </div>
             <div className="hidden overflow-x-auto lg:block">
-              <table className="w-full min-w-[1050px] border-collapse text-sm">
+              <table className="w-full min-w-[1240px] border-collapse text-sm">
                 <thead className="bg-slate-950 text-left text-xs uppercase tracking-wider text-slate-500">
-                  <tr><th className="px-4 py-3">종목명</th><th>티커</th><th>구분</th><th>수량</th><th>평균단가</th><th>현재가</th><th>평가금액</th><th>손익</th><th>수익률</th><th>관리</th></tr>
+                  <tr><th className="px-4 py-3">종목명</th><th>티커</th><th>구분</th><th>수량</th><th>평균단가</th><th>현재가</th><th>평가금액</th><th>손익</th><th>수익률</th><th>배당주기</th><th>주당 분배금</th><th>관리</th></tr>
                 </thead>
                 <tbody>
-                  {filteredStocks.map((stock) => (
-                    <tr className="border-t border-slate-800 hover:bg-slate-800/70" key={stock.id}>
-                      <td className="px-4 py-3 font-black text-white">{stock.name}</td>
-                      <td>{stock.ticker}</td>
-                      <td>{isKoreanStock(stock) ? "국내" : "해외"}</td>
-                      <td>{Number(stock.quantity || 0).toLocaleString()}</td>
-                      <td>{formatMoney(stock.avgPrice, stock.currency)}</td>
-                      <td>{formatMoney(stock.currentPrice, stock.currency)}</td>
-                      <td>{formatMoney(stock.totalValue, stock.currency)}</td>
-                      <td className={Number(stock.profitLoss) >= 0 ? "font-black text-cyan-300" : "font-black text-rose-300"}>{formatMoney(stock.profitLoss, stock.currency)}</td>
-                      <td className={Number(stock.profitLossRate) >= 0 ? "font-black text-cyan-300" : "font-black text-rose-300"}>{formatPercent(stock.profitLossRate)}</td>
-                      <td><button className="rounded-xl bg-slate-800 px-3 py-1.5 text-xs font-black text-slate-200 hover:bg-rose-600 hover:text-white" onClick={() => removeHolding(stock)} type="button">제거</button></td>
-                    </tr>
-                  ))}
+                  {filteredStocks.map((stock) => {
+                    const dividendInfo = dividendInfoFor(stock, dividendInfoMap);
+                    return (
+                      <tr className="border-t border-slate-800 hover:bg-slate-800/70" key={stock.id}>
+                        <td className="px-4 py-3 font-black text-white">{stock.name}</td>
+                        <td>{stock.ticker}</td>
+                        <td>{isKoreanStock(stock) ? "국내" : "해외"}</td>
+                        <td>{Number(stock.quantity || 0).toLocaleString()}</td>
+                        <td>{formatMoney(stock.avgPrice, stock.currency)}</td>
+                        <td>{formatMoney(stock.currentPrice, stock.currency)}</td>
+                        <td>{formatMoney(stock.totalValue, stock.currency)}</td>
+                        <td className={Number(stock.profitLoss) >= 0 ? "font-black text-cyan-300" : "font-black text-rose-300"}>{formatMoney(stock.profitLoss, stock.currency)}</td>
+                        <td className={Number(stock.profitLossRate) >= 0 ? "font-black text-cyan-300" : "font-black text-rose-300"}>{formatPercent(stock.profitLossRate)}</td>
+                        <td>
+                          <span className="rounded-full bg-cyan-400/10 px-2 py-1 text-xs font-black text-cyan-200">
+                            {formatDividendFrequency(dividendInfo?.frequency)}
+                          </span>
+                        </td>
+                        <td>{dividendInfo ? formatMoney(dividendInfo.dividendPerShare, stock.currency) : "-"}</td>
+                        <td>
+                          <div className="flex gap-1">
+                            <button className="rounded-xl bg-slate-800 px-3 py-1.5 text-xs font-black text-slate-200 hover:bg-cyan-500 hover:text-slate-950" onClick={() => openEditHolding(stock)} type="button">수정</button>
+                            <button className="rounded-xl bg-slate-800 px-3 py-1.5 text-xs font-black text-slate-200 hover:bg-rose-600 hover:text-white" onClick={() => removeHolding(stock)} type="button">제거</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
             <div className="grid gap-2 p-3 lg:hidden">
+              {filteredStocks.map((stock) => {
+                const dividendInfo = dividendInfoFor(stock, dividendInfoMap);
+                return (
+                  <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3" key={stock.id}>
+                    <div className="flex justify-between gap-3"><strong>{stock.name}</strong><span className={Number(stock.profitLossRate) >= 0 ? "font-black text-cyan-300" : "font-black text-rose-300"}>{formatPercent(stock.profitLossRate)}</span></div>
+                    <p className="mt-1 text-sm font-bold text-slate-500">{stock.ticker}</p>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-sm"><span>수량 {stock.quantity}</span><span>평가 {formatMoney(stock.totalValue, stock.currency)}</span><span>평단 {formatMoney(stock.avgPrice, stock.currency)}</span><span>현재 {formatMoney(stock.currentPrice, stock.currency)}</span><span>배당 {formatDividendFrequency(dividendInfo?.frequency)}</span><span>주당 {dividendInfo ? formatMoney(dividendInfo.dividendPerShare, stock.currency) : "-"}</span></div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <button className="rounded-xl bg-slate-800 px-3 py-2 text-sm font-black text-slate-200 hover:bg-cyan-500 hover:text-slate-950" onClick={() => openEditHolding(stock)} type="button">수정</button>
+                      <button className="rounded-xl bg-slate-800 px-3 py-2 text-sm font-black text-slate-200 hover:bg-rose-600 hover:text-white" onClick={() => removeHolding(stock)} type="button">제거</button>
+                    </div>
+                  </article>
+                );
+              })}
+              {!filteredStocks.length && <p className="rounded-2xl bg-slate-950 p-4 text-sm font-bold text-slate-500">해당 구분의 보유종목이 없습니다.</p>}
+            </div>
+            <div className="hidden">
               {filteredStocks.map((stock) => (
                 <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3" key={stock.id}>
                   <div className="flex justify-between gap-3"><strong>{stock.name}</strong><span className={Number(stock.profitLossRate) >= 0 ? "font-black text-cyan-300" : "font-black text-rose-300"}>{formatPercent(stock.profitLossRate)}</span></div>
@@ -423,6 +553,29 @@ function MyPortfolioPage() {
               <label className="grid gap-1 text-sm font-bold sm:col-span-2">메모<input className="form-control border-slate-800 bg-slate-950 text-white" value={holdingForm.memo} onChange={(event) => setHoldingForm({ ...holdingForm, memo: event.target.value })} /></label>
             </div>
             <button className="mt-5 w-full rounded-2xl bg-cyan-500 px-4 py-3 font-black text-slate-950 hover:bg-cyan-300" disabled={loading}>저장</button>
+          </form>
+        </div>
+      )}
+
+      {editingStock && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80 p-4">
+          <form className="w-full max-w-2xl rounded-2xl border border-slate-700/80 bg-slate-900 p-5 text-white shadow-sm" onSubmit={updateHolding}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-wider text-cyan-300">보유종목 수정</p>
+                <h3 className="mt-1 text-2xl font-black">{editingStock.name}</h3>
+                <p className="text-sm font-bold text-slate-500">{editingStock.ticker}</p>
+              </div>
+              <button className="rounded-2xl bg-slate-800 px-3 py-2 text-sm font-black" onClick={closeEditHolding} type="button">닫기</button>
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-1 text-sm font-bold">수량<input className="form-control border-slate-800 bg-slate-950 text-white" type="number" min="1" value={editHoldingForm.quantity} onChange={(event) => setEditHoldingForm({ ...editHoldingForm, quantity: event.target.value })} /></label>
+              <label className="grid gap-1 text-sm font-bold">평균 매수가<input className="form-control border-slate-800 bg-slate-950 text-white" type="number" min="0" step="0.01" value={editHoldingForm.avgPrice} onChange={(event) => setEditHoldingForm({ ...editHoldingForm, avgPrice: event.target.value })} /></label>
+              <label className="grid gap-1 text-sm font-bold">현재가<input className="form-control border-slate-800 bg-slate-950 text-white" type="number" min="0" step="0.01" value={editHoldingForm.currentPrice} onChange={(event) => setEditHoldingForm({ ...editHoldingForm, currentPrice: event.target.value })} /></label>
+              <label className="grid gap-1 text-sm font-bold">통화<input className="form-control border-slate-800 bg-slate-950 text-white" value={editHoldingForm.currency} onChange={(event) => setEditHoldingForm({ ...editHoldingForm, currency: event.target.value })} /></label>
+              <label className="grid gap-1 text-sm font-bold sm:col-span-2">메모<input className="form-control border-slate-800 bg-slate-950 text-white" value={editHoldingForm.memo} onChange={(event) => setEditHoldingForm({ ...editHoldingForm, memo: event.target.value })} /></label>
+            </div>
+            <button className="mt-5 w-full rounded-2xl bg-cyan-500 px-4 py-3 font-black text-slate-950 hover:bg-cyan-300" disabled={loading}>수정 저장</button>
           </form>
         </div>
       )}
