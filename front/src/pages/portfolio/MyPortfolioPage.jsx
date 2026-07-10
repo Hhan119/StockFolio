@@ -180,14 +180,14 @@ function MyPortfolioPage() {
       setDistributionSummary(null);
       return;
     }
-    const [portfolioDetail, legacyDividendSummary, distribution] = await Promise.all([
-      portfolioService.detail(portfolioId),
+    const portfolioDetail = await portfolioService.detail(portfolioId);
+    const [legacyDividendResult, distributionResult] = await Promise.allSettled([
       portfolioService.dividendSummary(portfolioId),
       portfolioService.distributionSummary(portfolioId),
     ]);
     setDetail(portfolioDetail);
-    setDividendSummary(legacyDividendSummary);
-    setDistributionSummary(distribution);
+    setDividendSummary(legacyDividendResult.status === "fulfilled" ? legacyDividendResult.value : null);
+    setDistributionSummary(distributionResult.status === "fulfilled" ? distributionResult.value : null);
   };
 
   useEffect(() => {
