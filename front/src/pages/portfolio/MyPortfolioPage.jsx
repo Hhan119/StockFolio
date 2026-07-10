@@ -11,8 +11,32 @@ const dividendFrequencyLabels = {
   MONTHLY: "월배당",
   QUARTERLY: "분기배당",
   SEMI_ANNUAL: "반기배당",
+  SEMIANNUAL: "반기배당",
   ANNUAL: "연배당",
   SPECIAL: "특별배당",
+  IRREGULAR: "불규칙",
+  NONE: "배당 없음",
+  UNKNOWN: "정보 없음",
+};
+const eventStatusLabels = {
+  ESTIMATED: "예상",
+  DECLARED: "발표",
+  CONFIRMED: "확정",
+  PAID: "지급 완료",
+  CORRECTED: "정정",
+  CANCELLED: "취소",
+};
+const confidenceLabels = {
+  HIGH: "신뢰도 높음",
+  MEDIUM: "신뢰도 보통",
+  LOW: "신뢰도 낮음",
+  UNAVAILABLE: "신뢰도 없음",
+};
+const volatilityLabels = {
+  STABLE: "안정",
+  MODERATE: "보통 변동",
+  HIGH: "변동 큼",
+  UNAVAILABLE: "변동성 없음",
 };
 
 function isKoreanStock(stock) {
@@ -47,6 +71,15 @@ function buildDividendInfoMap(summary) {
   return map;
 }
 
+function buildDistributionInfoMap(summary) {
+  const map = new Map();
+  (summary?.holdings || []).forEach((item) => {
+    if (item.holdingId) map.set(`id:${item.holdingId}`, item);
+    if (item.ticker) map.set(`ticker:${String(item.ticker).toUpperCase()}`, item);
+  });
+  return map;
+}
+
 function dividendInfoFor(stock, dividendInfoMap) {
   return dividendInfoMap.get(`id:${stock.id}`)
     || dividendInfoMap.get(`ticker:${String(stock.ticker || "").toUpperCase()}`)
@@ -55,6 +88,28 @@ function dividendInfoFor(stock, dividendInfoMap) {
 
 function formatDividendFrequency(frequency) {
   return dividendFrequencyLabels[frequency] || "배당 없음";
+}
+
+function formatOptionalMoney(value, currency) {
+  if (value === null || value === undefined || value === "") return "정보 없음";
+  return formatMoney(value, currency);
+}
+
+function formatNextPayment(info) {
+  if (!info?.nextPaymentDate) return "정보 없음";
+  return `${info.nextPaymentDate} ${eventStatusLabels[info.nextEventStatus] || ""}`.trim();
+}
+
+function getDistributionFrequency(info) {
+  return info?.observedFrequency || info?.declaredFrequency || info?.frequency;
+}
+
+function getLatestDistributionAmount(info) {
+  return info?.latestAmountPerShare ?? info?.dividendPerShare;
+}
+
+function getAnnualDistributionAmount(info) {
+  return info?.estimatedAnnualGrossAmount ?? info?.totalDividend;
 }
 
 function DarkMetric({ label, value, tone = "default" }) {
@@ -72,6 +127,7 @@ function MyPortfolioPage() {
   const [selectedPortfolioId, setSelectedPortfolioId] = useState("");
   const [detail, setDetail] = useState(null);
   const [dividendSummary, setDividendSummary] = useState(null);
+  const [distributionSummary, setDistributionSummary] = useState(null);
   const [marketFilter, setMarketFilter] = useState("ALL");
   const [searchMarket, setSearchMarket] = useState("ALL");
   const [keyword, setKeyword] = useState("");
@@ -95,10 +151,11 @@ function MyPortfolioPage() {
   const totalValue = Number(detail?.totalValue || 0);
   const totalProfit = Number(detail?.totalProfitLoss || 0);
   const totalReturn = Number(detail?.totalProfitLossRate || 0);
-  const estimatedAnnualDividend = Number(dividendSummary?.annualEstimated || 0);
+  const estimatedAnnualDividend = Number(distributionSummary?.estimatedAnnualGrossAmount ?? dividendSummary?.annualEstimated ?? 0);
   const pieStyle = useMemo(() => ({ background: buildPie(filteredStocks) }), [filteredStocks]);
   const topHoldings = [...filteredStocks].sort((a, b) => Number(b.totalValue || 0) - Number(a.totalValue || 0)).slice(0, 5);
-  const dividendInfoMap = useMemo(() => buildDividendInfoMap(dividendSummary), [dividendSummary]);
+  const legacyDividendInfoMap = useMemo(() => buildDividendInfoMap(dividendSummary), [dividendSummary]);
+  const distributionInfoMap = useMemo(() => buildDistributionInfoMap(distributionSummary), [distributionSummary]);
 
   const loadPortfolios = async () => {
     const data = await portfolioService.list();
@@ -112,12 +169,25 @@ function MyPortfolioPage() {
     if (!nextId) {
       setDetail(null);
       setDividendSummary(null);
+      setDistributionSummary(null);
     }
   };
 
   const loadDetail = async (portfolioId) => {
-    setDetail(portfolioId ? await portfolioService.detail(portfolioId) : null);
-    setDividendSummary(portfolioId ? await portfolioService.dividendSummary(portfolioId) : null);
+    if (!portfolioId) {
+      setDetail(null);
+      setDividendSummary(null);
+      setDistributionSummary(null);
+      return;
+    }
+    const [portfolioDetail, legacyDividendSummary, distribution] = await Promise.all([
+      portfolioService.detail(portfolioId),
+      portfolioService.dividendSummary(portfolioId),
+      portfolioService.distributionSummary(portfolioId),
+    ]);
+    setDetail(portfolioDetail);
+    setDividendSummary(legacyDividendSummary);
+    setDistributionSummary(distribution);
   };
 
   useEffect(() => {
@@ -435,13 +505,13 @@ function MyPortfolioPage() {
               <p className="mt-1 text-sm font-bold text-slate-500">동일 종목은 수량과 평균단가가 자동 합산됩니다.</p>
             </div>
             <div className="hidden overflow-x-auto lg:block">
-              <table className="w-full min-w-[1240px] border-collapse text-sm">
+              <table className="w-full min-w-[1640px] border-collapse text-sm">
                 <thead className="bg-slate-950 text-left text-xs uppercase tracking-wider text-slate-500">
-                  <tr><th className="px-4 py-3">종목명</th><th>티커</th><th>구분</th><th>수량</th><th>평균단가</th><th>현재가</th><th>평가금액</th><th>손익</th><th>수익률</th><th>배당주기</th><th>주당 분배금(1회)</th><th>관리</th></tr>
+                  <tr><th className="px-4 py-3">종목명</th><th>티커</th><th>구분</th><th>수량</th><th>평균단가</th><th>현재가</th><th>평가금액</th><th>손익</th><th>수익률</th><th>지급 패턴</th><th>최근 1회</th><th>최근 12개월</th><th>예상 연 분배금</th><th>다음 지급</th><th>관리</th></tr>
                 </thead>
                 <tbody>
                   {filteredStocks.map((stock) => {
-                    const dividendInfo = dividendInfoFor(stock, dividendInfoMap);
+                    const dividendInfo = dividendInfoFor(stock, distributionInfoMap) || dividendInfoFor(stock, legacyDividendInfoMap);
                     return (
                       <tr className="border-t border-slate-800 hover:bg-slate-800/70" key={stock.id}>
                         <td className="px-4 py-3 font-black text-white">{stock.name}</td>
@@ -454,11 +524,24 @@ function MyPortfolioPage() {
                         <td className={Number(stock.profitLoss) >= 0 ? "font-black text-cyan-300" : "font-black text-rose-300"}>{formatMoney(stock.profitLoss, stock.currency)}</td>
                         <td className={Number(stock.profitLossRate) >= 0 ? "font-black text-cyan-300" : "font-black text-rose-300"}>{formatPercent(stock.profitLossRate)}</td>
                         <td>
-                          <span className="rounded-full bg-cyan-400/10 px-2 py-1 text-xs font-black text-cyan-200">
-                            {formatDividendFrequency(dividendInfo?.frequency)}
-                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            <span className="rounded-full bg-cyan-400/10 px-2 py-1 text-xs font-black text-cyan-200">
+                              {formatDividendFrequency(getDistributionFrequency(dividendInfo))}
+                            </span>
+                            {dividendInfo?.paymentsLast12Months > 0 && <span className="rounded-full bg-slate-800 px-2 py-1 text-xs font-black text-slate-300">최근 12개월 {dividendInfo.paymentsLast12Months}회</span>}
+                            {dividendInfo?.coveredCallLike && <span className="rounded-full bg-amber-400/15 px-2 py-1 text-xs font-black text-amber-200">분배금 변동 가능</span>}
+                            {dividendInfo?.specialDistributionIncluded && <span className="rounded-full bg-violet-400/15 px-2 py-1 text-xs font-black text-violet-200">특별분배 포함</span>}
+                          </div>
                         </td>
-                        <td>{dividendInfo ? formatMoney(dividendInfo.dividendPerShare, stock.currency) : "-"}</td>
+                        <td>{formatOptionalMoney(getLatestDistributionAmount(dividendInfo), stock.currency)}</td>
+                        <td>{formatOptionalMoney(dividendInfo?.trailingTwelveMonthsAmountPerShare, stock.currency)}</td>
+                        <td>{formatOptionalMoney(getAnnualDistributionAmount(dividendInfo), stock.currency)}</td>
+                        <td>
+                          <div className="grid gap-1">
+                            <span className="font-black text-slate-200">{formatNextPayment(dividendInfo)}</span>
+                            <span className="text-xs text-slate-500">{confidenceLabels[dividendInfo?.estimateConfidence] || "신뢰도 없음"} · {volatilityLabels[dividendInfo?.distributionVolatility] || "변동성 없음"}</span>
+                          </div>
+                        </td>
                         <td>
                           <div className="flex gap-1">
                             <button className="rounded-xl bg-slate-800 px-3 py-1.5 text-xs font-black text-slate-200 hover:bg-cyan-500 hover:text-slate-950" onClick={() => openEditHolding(stock)} type="button">수정</button>
@@ -473,12 +556,26 @@ function MyPortfolioPage() {
             </div>
             <div className="grid gap-2 p-3 lg:hidden">
               {filteredStocks.map((stock) => {
-                const dividendInfo = dividendInfoFor(stock, dividendInfoMap);
+                const dividendInfo = dividendInfoFor(stock, distributionInfoMap) || dividendInfoFor(stock, legacyDividendInfoMap);
                 return (
                   <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3" key={stock.id}>
                     <div className="flex justify-between gap-3"><strong>{stock.name}</strong><span className={Number(stock.profitLossRate) >= 0 ? "font-black text-cyan-300" : "font-black text-rose-300"}>{formatPercent(stock.profitLossRate)}</span></div>
                     <p className="mt-1 text-sm font-bold text-slate-500">{stock.ticker}</p>
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-sm"><span>수량 {stock.quantity}</span><span>평가 {formatMoney(stock.totalValue, stock.currency)}</span><span>평단 {formatMoney(stock.avgPrice, stock.currency)}</span><span>현재 {formatMoney(stock.currentPrice, stock.currency)}</span><span>배당 {formatDividendFrequency(dividendInfo?.frequency)}</span><span>1회 주당 {dividendInfo ? formatMoney(dividendInfo.dividendPerShare, stock.currency) : "-"}</span></div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                      <span>수량 {stock.quantity}</span>
+                      <span>평가 {formatMoney(stock.totalValue, stock.currency)}</span>
+                      <span>평단 {formatMoney(stock.avgPrice, stock.currency)}</span>
+                      <span>현재 {formatMoney(stock.currentPrice, stock.currency)}</span>
+                      <span>패턴 {formatDividendFrequency(getDistributionFrequency(dividendInfo))}</span>
+                      <span>최근 1회 {formatOptionalMoney(getLatestDistributionAmount(dividendInfo), stock.currency)}</span>
+                      <span>최근 12개월 {formatOptionalMoney(dividendInfo?.trailingTwelveMonthsAmountPerShare, stock.currency)}</span>
+                      <span>예상 연 {formatOptionalMoney(getAnnualDistributionAmount(dividendInfo), stock.currency)}</span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      <span className="rounded-full bg-cyan-400/10 px-2 py-1 text-xs font-black text-cyan-200">{eventStatusLabels[dividendInfo?.nextEventStatus] || "정보 없음"}</span>
+                      <span className="rounded-full bg-slate-800 px-2 py-1 text-xs font-black text-slate-300">{confidenceLabels[dividendInfo?.estimateConfidence] || "신뢰도 없음"}</span>
+                      {dividendInfo?.coveredCallLike && <span className="rounded-full bg-amber-400/15 px-2 py-1 text-xs font-black text-amber-200">분배금 변동 가능</span>}
+                    </div>
                     <div className="mt-3 grid grid-cols-2 gap-2">
                       <button className="rounded-xl bg-slate-800 px-3 py-2 text-sm font-black text-slate-200 hover:bg-cyan-500 hover:text-slate-950" onClick={() => openEditHolding(stock)} type="button">수정</button>
                       <button className="rounded-xl bg-slate-800 px-3 py-2 text-sm font-black text-slate-200 hover:bg-rose-600 hover:text-white" onClick={() => removeHolding(stock)} type="button">제거</button>

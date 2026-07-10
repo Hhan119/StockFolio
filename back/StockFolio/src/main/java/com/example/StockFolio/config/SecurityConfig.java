@@ -49,6 +49,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/health").permitAll()
                         .requestMatchers("/api/calculators/**").permitAll()
                         .requestMatchers("/api/blog/**").permitAll()
+                        .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/api/analysis/ai").permitAll()
                         .requestMatchers("/api/market/**").permitAll()
                         .requestMatchers("/api/stocks/search").permitAll()

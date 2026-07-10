@@ -5,7 +5,12 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import com.example.StockFolio.entity.DataStatus;
 import com.example.StockFolio.entity.Dividend.DividendFrequency;
+import com.example.StockFolio.entity.DistributionEventStatus;
+import com.example.StockFolio.entity.DistributionType;
+import com.example.StockFolio.entity.EstimateConfidence;
+import com.example.StockFolio.entity.EstimateMethod;
 
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
@@ -57,6 +62,16 @@ public class DividendDto {
         private Integer paymentMonth;
         private String memo;
         private LocalDateTime createdAt;
+        private DistributionEventStatus distributionEventStatus;
+        private DistributionType distributionType;
+        private EstimateMethod estimateMethod;
+        private EstimateConfidence estimateConfidence;
+        private DataStatus dataStatus;
+        private String provider;
+        private java.time.Instant dataAsOf;
+        private Boolean isDateEstimated;
+        private Boolean isAmountEstimated;
+        private String message;
     }
 
     @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder

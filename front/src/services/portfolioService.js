@@ -34,4 +34,16 @@ export const portfolioService = {
   dividendSummary(portfolioId) {
     return api.get(`/api/portfolios/${portfolioId}/dividends/summary`).then((response) => response.data);
   },
+  distributionSummary(portfolioId, includeSpecial = false) {
+    return api.get(`/api/portfolios/${portfolioId}/distribution-summary`, { params: { includeSpecial } }).then((response) => response.data);
+  },
+  distributionCalendar(portfolioId, params = {}) {
+    return api.get(`/api/portfolios/${portfolioId}/distribution-calendar`, { params }).then((response) => response.data);
+  },
+  holdingDistributionSummary(holdingId, includeSpecial = false) {
+    return api.get(`/api/holdings/${holdingId}/distribution-summary`, { params: { includeSpecial } }).then((response) => response.data);
+  },
+  addManualDistribution(holdingId, payload) {
+    return api.post(`/api/holdings/${holdingId}/manual-distribution`, payload).then((response) => response.data);
+  },
 };

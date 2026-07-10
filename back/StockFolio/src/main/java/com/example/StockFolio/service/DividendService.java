@@ -27,6 +27,7 @@ public class DividendService {
     private final DividendRepository dividendRepository;
     private final StockRepository stockRepository;
     private final MarketDataService marketDataService;
+    private final DistributionCalculationService distributionCalculationService;
 
     public List<DividendDto.Response> getByPortfolio(Long portfolioId, Long userId) {
         return dividendRepository.findByPortfolioIdAndUserId(portfolioId, userId)
@@ -102,47 +103,7 @@ public class DividendService {
     @Transactional
     public DividendDto.AnnualSummary getAnnualSummary(Long portfolioId, Long userId) {
         backfillAutoDividends(portfolioId, userId);
-        List<DividendDto.Response> items = getByPortfolio(portfolioId, userId);
-        List<DividendDto.MonthlySummary> monthly = new ArrayList<>();
-
-        for (int month = 1; month <= 12; month++) {
-            int currentMonth = month;
-            List<DividendDto.Response> monthItems = items.stream()
-                    .filter(item -> occursInMonth(item, currentMonth))
-                    .toList();
-            BigDecimal estimated = monthItems.stream()
-                    .map(DividendDto.Response::getTotalDividend)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal received = monthItems.stream()
-                    .map(item -> item.getAmountReceived() != null ? item.getAmountReceived() : BigDecimal.ZERO)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-            monthly.add(DividendDto.MonthlySummary.builder()
-                    .month(month)
-                    .monthName(Month.of(month).name())
-                    .estimatedTotal(estimated)
-                    .receivedTotal(received)
-                    .dividendCount(monthItems.size())
-                    .items(monthItems)
-                    .build());
-        }
-
-        BigDecimal annualEstimated = monthly.stream()
-                .map(DividendDto.MonthlySummary::getEstimatedTotal)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalReceived = monthly.stream()
-                .map(DividendDto.MonthlySummary::getReceivedTotal)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        int dividendStockCount = (int) items.stream().map(DividendDto.Response::getStockId).distinct().count();
-
-        return DividendDto.AnnualSummary.builder()
-                .annualEstimated(annualEstimated)
-                .monthlyAverage(annualEstimated.divide(BigDecimal.valueOf(12), 2, RoundingMode.HALF_UP))
-                .totalReceived(totalReceived)
-                .dividendStockCount(dividendStockCount)
-                .monthly(monthly)
-                .build();
+        return distributionCalculationService.getLegacyAnnualSummary(portfolioId, userId);
     }
 
     private void backfillAutoDividends(Long portfolioId, Long userId) {

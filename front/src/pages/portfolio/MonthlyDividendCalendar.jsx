@@ -16,8 +16,37 @@ const frequencyLabels = {
   MONTHLY: "월배당",
   QUARTERLY: "분기배당",
   SEMI_ANNUAL: "반기배당",
+  SEMIANNUAL: "반기배당",
   ANNUAL: "연배당",
   SPECIAL: "특별배당",
+  IRREGULAR: "불규칙",
+  NONE: "배당 없음",
+  UNKNOWN: "정보 없음",
+};
+
+const eventStatusLabels = {
+  ESTIMATED: "예상",
+  DECLARED: "발표",
+  CONFIRMED: "확정",
+  PAID: "지급 완료",
+  CORRECTED: "정정",
+  CANCELLED: "취소",
+};
+
+const confidenceLabels = {
+  HIGH: "신뢰도 높음",
+  MEDIUM: "신뢰도 보통",
+  LOW: "신뢰도 낮음",
+  UNAVAILABLE: "신뢰도 없음",
+};
+
+const distributionTypeLabels = {
+  REGULAR: "정기분배",
+  SPECIAL: "특별분배",
+  CAPITAL_GAIN: "자본이득",
+  RETURN_OF_CAPITAL: "원금분배",
+  INTEREST: "이자",
+  OTHER: "기타",
 };
 
 function getDividendName(dividend) {
@@ -39,6 +68,10 @@ function formatDividendMoney(value, dividend) {
 
 function formatFrequency(frequency) {
   return frequencyLabels[frequency] || "배당 정보 없음";
+}
+
+function formatStatus(status) {
+  return eventStatusLabels[status] || "예상";
 }
 
 function MonthlyDividendCalendar() {
@@ -168,6 +201,11 @@ function MonthlyDividendCalendar() {
                         <p className="mt-1 text-sm font-bold text-slate-500 dark:text-slate-400">
                           {getDividendTicker(dividend)} · {formatFrequency(dividend.frequency)}
                         </p>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          <span className="rounded-full bg-cyan-50 px-2 py-1 text-xs font-black text-cyan-700 dark:bg-cyan-950 dark:text-cyan-200">{formatStatus(dividend.distributionEventStatus)}</span>
+                          <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-black text-slate-600 dark:bg-slate-800 dark:text-slate-300">{confidenceLabels[dividend.estimateConfidence] || "신뢰도 없음"}</span>
+                          <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-black text-slate-600 dark:bg-slate-800 dark:text-slate-300">{distributionTypeLabels[dividend.distributionType] || "정기분배"}</span>
+                        </div>
                       </div>
                       <strong className="text-xl font-black text-cyan-700 dark:text-cyan-300">{formatDividendMoney(dividend.totalDividend, dividend)}</strong>
                     </div>
@@ -175,8 +213,12 @@ function MonthlyDividendCalendar() {
                     <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
                       <DetailCell label="보유 수량" value={`${Number(dividend.stockQuantity || 0).toLocaleString("ko-KR")}주`} />
                       <DetailCell label="1회 주당 분배금" value={formatDividendMoney(dividend.dividendPerShare, dividend)} />
-                      <DetailCell label="지급 기준 월" value={dividend.paymentMonth ? `${dividend.paymentMonth}월` : "-"} />
+                      <DetailCell label="배당락일" value={dividend.exDividendDate || (dividend.isDateEstimated ? "예상" : "-")} />
                       <DetailCell label="지급 예정일" value={dividend.paymentDate || "-"} />
+                      <DetailCell label="예상 방법" value={dividend.estimateMethod || "-"} />
+                      <DetailCell label="데이터 출처" value={dividend.provider || "-"} />
+                      <DetailCell label="데이터 기준" value={dividend.dataAsOf ? new Date(dividend.dataAsOf).toLocaleString("ko-KR") : "-"} />
+                      <DetailCell label="세후 금액" value="세율 설정 후 계산 가능" />
                     </div>
                     {dividend.memo && <p className="mt-3 rounded-xl bg-white p-3 text-sm font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{dividend.memo}</p>}
                   </article>
