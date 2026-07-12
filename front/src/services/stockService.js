@@ -151,4 +151,7 @@ export const stockService = {
   quote(market, ticker) {
     return api.get("/api/market/quote", { params: { market, ticker } }).then((response) => response.data);
   },
+  topEtfs(market = "ALL", limit = 5) {
+    return api.get("/api/market/etfs/top", { params: { market, limit } }).then((response) => response.data);
+  },
 };

@@ -12,8 +12,9 @@ import {
   SkeletonState,
 } from "../../components/etf/index.jsx";
 import { etfMockApi, MOCK_ETFS } from "../../services/etfMockApi.js";
+import { stockService } from "../../services/stockService.js";
 import { formatNullable } from "../../utils/etfCalculations.js";
-import { formatPercent } from "../../utils/format.js";
+import { formatMoney, formatPercent } from "../../utils/format.js";
 
 function EtfHubPage() {
   const navigate = useNavigate();
@@ -21,6 +22,12 @@ function EtfHubPage() {
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["etf-hub-summary"],
     queryFn: () => etfMockApi.getHubSummary(),
+  });
+  const topEtfQuery = useQuery({
+    queryKey: ["etf-daily-top", "ALL", 5],
+    queryFn: () => stockService.topEtfs("ALL", 5),
+    staleTime: 24 * 60 * 60 * 1000,
+    retry: false,
   });
 
   const suggestions = useMemo(() => {
@@ -38,6 +45,7 @@ function EtfHubPage() {
 
   const summary = data?.data;
   if (!summary) return <EmptyState title="ETF 허브 데이터가 없습니다" />;
+  const dailyTopEtfs = topEtfQuery.data?.length ? topEtfQuery.data.slice(0, 5) : [];
 
   return (
     <section className="grid gap-5">
@@ -77,13 +85,21 @@ function EtfHubPage() {
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-wider text-slate-500">Today</p>
-            <h3 className="text-2xl font-black text-slate-950 dark:text-white">오늘 많이 본 ETF</h3>
+            <p className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Daily Top</p>
+            <h3 className="text-2xl font-black text-slate-950 dark:text-white">ETF 거래대금 TOP 5</h3>
+            <p className="mt-1 text-sm font-bold text-slate-600 dark:text-slate-300">KRX ETF 일별 거래대금 기준으로 하루에 한 번 캐시합니다.</p>
           </div>
-          <EtfBadge tone="rose">샘플 데이터</EtfBadge>
+          <EtfBadge tone={dailyTopEtfs.length ? "emerald" : "rose"}>{dailyTopEtfs.length ? "일일 캐시" : "보조 데이터"}</EtfBadge>
         </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {summary.mostViewed.map((etf) => (
+        {dailyTopEtfs.length ? (
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            {dailyTopEtfs.map((etf, index) => (
+              <DailyTopCard etf={etf} index={index} key={`${etf.market}-${etf.ticker}`} />
+            ))}
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {summary.mostViewed.slice(0, 5).map((etf) => (
             <Link className="rounded-2xl bg-slate-50 p-4 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700" key={etf.slug} to={`/etf/${etf.slug}`}>
               <div className="flex items-start justify-between gap-2">
                 <div><p className="text-lg font-black text-slate-950 dark:text-white">{etf.ticker}</p><p className="mt-1 text-sm font-bold text-slate-600 dark:text-slate-300">{etf.name}</p></div>
@@ -91,8 +107,9 @@ function EtfHubPage() {
               </div>
               <p className="mt-3 text-sm font-semibold leading-6 text-slate-600 dark:text-slate-300">{etf.beginnerDescription}</p>
             </Link>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <AdSlot />
@@ -124,6 +141,34 @@ function EtfHubPage() {
       <InvestmentDisclaimer />
     </section>
   );
+}
+
+function DailyTopCard({ etf, index }) {
+  const staticEtf = MOCK_ETFS.find((item) => item.ticker.toUpperCase() === etf.ticker.toUpperCase());
+  const card = (
+    <>
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-2xl font-black text-cyan-700 dark:text-cyan-300">#{index + 1}</span>
+        <EtfBadge tone={etf.market === "KR" ? "emerald" : "cyan"}>{etf.market === "KR" ? "국내" : "해외"}</EtfBadge>
+      </div>
+      <p className="mt-3 truncate text-lg font-black text-slate-950 dark:text-white">{etf.ticker}</p>
+      <p className="mt-1 line-clamp-2 min-h-10 text-sm font-bold text-slate-600 dark:text-slate-300">{etf.name}</p>
+      <div className="mt-4 rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
+        <p className="text-xs font-black text-slate-500 dark:text-slate-400">현재가</p>
+        <p className="mt-1 font-black text-slate-950 dark:text-white">{Number(etf.currentPrice || 0) > 0 ? formatMoney(etf.currentPrice, etf.currency) : "확인중"}</p>
+      </div>
+    </>
+  );
+
+  if (staticEtf) {
+    return (
+      <Link className="rounded-2xl bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700" to={`/etf/${staticEtf.slug}`}>
+        {card}
+      </Link>
+    );
+  }
+
+  return <article className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-800">{card}</article>;
 }
 
 function RankingPreview({ title, items, to }) {

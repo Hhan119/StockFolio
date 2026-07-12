@@ -28,4 +28,10 @@ public class MarketDataController {
                                  @RequestParam String ticker) {
         return marketDataService.quote(market, ticker);
     }
+
+    @GetMapping("/etfs/top")
+    public List<MarketDto.SearchResult> topEtfs(@RequestParam(defaultValue = "ALL") String market,
+                                                @RequestParam(defaultValue = "5") int limit) {
+        return marketDataService.topEtfs(market, limit);
+    }
 }

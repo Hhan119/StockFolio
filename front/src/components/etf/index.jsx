@@ -141,6 +141,13 @@ export function EtfSearchBox({ suggestions = [], value, onChange, onSubmit, onSe
   };
 
   const keyDown = (event) => {
+    if (!suggestions.length) {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        submit();
+      }
+      return;
+    }
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setActiveIndex((current) => Math.min(current + 1, suggestions.length - 1));
@@ -176,8 +183,8 @@ export function EtfSearchBox({ suggestions = [], value, onChange, onSubmit, onSe
         <div className="absolute left-0 right-0 top-[4.5rem] z-30 max-h-80 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-800 dark:bg-slate-900">
           {suggestions.slice(0, 8).map((etf, index) => (
             <button
-              className={`grid w-full grid-cols-[72px_1fr] gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold ${index === activeIndex ? "bg-slate-100 dark:bg-slate-800" : "hover:bg-slate-50 dark:hover:bg-slate-800"}`}
-              key={etf.slug}
+              className={`grid w-full grid-cols-[86px_minmax(0,1fr)] items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold sm:grid-cols-[92px_minmax(0,1fr)_auto] ${index === activeIndex ? "bg-slate-100 dark:bg-slate-800" : "hover:bg-slate-50 dark:hover:bg-slate-800"}`}
+              key={etf.slug || `${etf.market || "ETF"}-${etf.ticker || etf.name}-${index}`}
               type="button"
               onMouseEnter={() => setActiveIndex(index)}
               onClick={() => {
@@ -185,8 +192,13 @@ export function EtfSearchBox({ suggestions = [], value, onChange, onSubmit, onSe
                 saveRecent(etf.ticker);
               }}
             >
-              <span className="font-black text-slate-950 dark:text-white">{etf.ticker}</span>
-              <span className="text-slate-600 dark:text-slate-300">{etf.name}</span>
+              <span className="truncate font-black text-slate-950 dark:text-white">{etf.ticker}</span>
+              <span className="min-w-0 truncate text-slate-600 dark:text-slate-300">{etf.name}</span>
+              {etf.currentPrice ? (
+                <span className="hidden rounded-lg bg-slate-100 px-2 py-1 text-xs font-black text-slate-700 dark:bg-slate-800 dark:text-slate-200 sm:inline-flex">
+                  {formatMoney(etf.currentPrice, etf.currency)}
+                </span>
+              ) : null}
             </button>
           ))}
         </div>
