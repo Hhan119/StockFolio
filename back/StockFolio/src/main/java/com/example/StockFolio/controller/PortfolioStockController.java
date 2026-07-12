@@ -2,7 +2,6 @@ package com.example.StockFolio.controller;
 
 import com.example.StockFolio.dto.PortfolioDto;
 import com.example.StockFolio.dto.StockDto;
-import com.example.StockFolio.service.DividendService;
 import com.example.StockFolio.service.PortfolioService;
 import com.example.StockFolio.service.StockService;
 import com.example.StockFolio.service.UserDetail;
@@ -28,7 +27,6 @@ public class PortfolioStockController {
 
     private final PortfolioService portfolioService;
     private final StockService stockService;
-    private final DividendService dividendService;
 
     @PostMapping("/stocks")
     @ResponseStatus(HttpStatus.CREATED)
@@ -62,13 +60,7 @@ public class PortfolioStockController {
                 .currency(request.getCurrency())
                 .memo(request.getMemo())
                 .build();
-        StockDto.Response savedStock = stockService.addStock(portfolioId, stockRequest, user.getId());
-        try {
-            dividendService.addAutoDividendIfAvailable(savedStock.getId(), user.getId());
-        } catch (Exception ignored) {
-            // Stock registration should not fail when dividend data cannot be inferred.
-        }
-        return savedStock;
+        return stockService.addStock(portfolioId, stockRequest, user.getId());
     }
 
     @Getter

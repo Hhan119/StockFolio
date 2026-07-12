@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.example.StockFolio.dto.DistributionDto;
 import com.example.StockFolio.dto.DividendDto;
+import com.example.StockFolio.dto.MarketDto;
 import com.example.StockFolio.entity.DataStatus;
 import com.example.StockFolio.entity.DistributionEvent;
 import com.example.StockFolio.entity.DistributionEventStatus;
@@ -47,6 +48,8 @@ import lombok.RequiredArgsConstructor;
 @Transactional(readOnly = true)
 public class DistributionCalculationService {
 
+    private static final String MARKET_ESTIMATE_PROVIDER = "market-yield-estimate";
+
     private static final Set<DistributionEventStatus> ACTUAL_STATUSES = Set.of(
             DistributionEventStatus.PAID,
             DistributionEventStatus.CONFIRMED,
@@ -61,11 +64,13 @@ public class DistributionCalculationService {
     private final DividendRepository dividendRepository;
     private final StockRepository stockRepository;
     private final DistributionEstimationPolicy policy;
+    private final MarketDataService marketDataService;
 
     @Transactional
     public DistributionDto.PortfolioDistributionSummaryResponse getPortfolioSummary(Long portfolioId, Long userId, boolean includeSpecial) {
         migrateLegacyDividends(portfolioId, userId);
         List<Stock> stocks = stockRepository.findByPortfolioIdAndUserId(portfolioId, userId);
+        stocks.forEach(this::seedDistributionForStock);
         List<DistributionDto.HoldingDistributionSummaryResponse> holdings = stocks.stream()
                 .map(stock -> summarizeStock(stock, includeSpecial))
                 .toList();
@@ -106,7 +111,9 @@ public class DistributionCalculationService {
         LocalDate end = to != null ? to : LocalDate.now().withMonth(12).withDayOfMonth(31);
         List<DistributionDto.CalendarEventResponse> result = new ArrayList<>();
 
-        for (Stock stock : stockRepository.findByPortfolioIdAndUserId(portfolioId, userId)) {
+        List<Stock> stocks = stockRepository.findByPortfolioIdAndUserId(portfolioId, userId);
+        stocks.forEach(this::seedDistributionForStock);
+        for (Stock stock : stocks) {
             DistributionDto.HoldingDistributionSummaryResponse summary = summarizeStock(stock, includeSpecial);
             if (summary.getNextEstimatedAmountPerShare() == null) continue;
             List<LocalDate> paymentDates = projectedPaymentDates(summary, start, end);
@@ -153,6 +160,7 @@ public class DistributionCalculationService {
         Stock stock = stockRepository.findByIdAndUserId(holdingId, userId)
                 .orElseThrow(() -> new EntityNotFoundException("Stock not found: " + holdingId));
         migrateLegacyDividends(stock.getPortfolio().getId(), userId);
+        seedDistributionForStock(stock);
         return summarizeStock(stock, includeSpecial);
     }
 
@@ -189,6 +197,74 @@ public class DistributionCalculationService {
     public Optional<DistributionDto.ProfileResponse> getInstrumentProfile(String instrumentId) {
         String key = resolveInstrumentKey(instrumentId);
         return profileRepository.findByInstrumentKey(key).map(this::toProfileResponse);
+    }
+
+    @Transactional
+    public void seedDistributionForHolding(Long holdingId, Long userId) {
+        Stock stock = stockRepository.findByIdAndUserId(holdingId, userId)
+                .orElseThrow(() -> new EntityNotFoundException("Stock not found: " + holdingId));
+        seedDistributionForStock(stock);
+    }
+
+    @Transactional
+    public void seedDistributionForStock(Stock stock) {
+        if (stock == null || stock.getTicker() == null || stock.getTicker().isBlank()) return;
+
+        String key = DistributionInstrumentKeys.from(stock);
+        List<DistributionEvent> events = eventRepository.findByInstrumentKey(key);
+        if (hasTrustedDistributionData(events)) return;
+
+        MarketDto.Quote quote = fetchQuote(stock);
+        if (quote != null && quote.source() != null && quote.source().startsWith("fallback")) {
+            quote = null;
+        }
+        BigDecimal dividendYield = quote != null && quote.dividendYield() != null ? quote.dividendYield() : BigDecimal.ZERO;
+        DistributionFrequency frequency = inferFrequencyFromQuote(stock, dividendYield);
+        DataStatus profileStatus = dividendYield.compareTo(BigDecimal.ZERO) > 0 ? DataStatus.ESTIMATED : DataStatus.UNAVAILABLE;
+        DistributionProfile profile = ensureProfile(
+                stock,
+                frequency,
+                profileStatus,
+                quote != null ? quote.source() : "local-inference"
+        );
+
+        BigDecimal currentPrice = quote != null && quote.currentPrice() != null && quote.currentPrice().compareTo(BigDecimal.ZERO) > 0
+                ? quote.currentPrice()
+                : stock.getCurrentPrice();
+        int payments = paymentsPerYear(frequency);
+        if (currentPrice == null || currentPrice.compareTo(BigDecimal.ZERO) <= 0 || dividendYield.compareTo(BigDecimal.ZERO) <= 0 || payments <= 0) {
+            return;
+        }
+
+        BigDecimal annualAmountPerShare = currentPrice
+                .multiply(dividendYield)
+                .divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP);
+        BigDecimal amountPerShare = annualAmountPerShare
+                .divide(BigDecimal.valueOf(payments), 6, RoundingMode.HALF_UP);
+        if (amountPerShare.compareTo(BigDecimal.ZERO) <= 0) return;
+
+        LocalDate paymentDate = nextPaymentDate(profile, events);
+        if (paymentDate == null) paymentDate = LocalDate.now().plusMonths(1).withDayOfMonth(15);
+
+        DistributionEvent event = DistributionEvent.builder()
+                .instrumentKey(profile.getInstrumentKey())
+                .ticker(stock.getTicker())
+                .instrumentName(stock.getName())
+                .market(inferMarket(stock))
+                .currency(normalizeCurrency(stock.getCurrency()))
+                .exDividendDate(paymentDate.minusDays(7))
+                .paymentDate(paymentDate)
+                .amountPerShare(amountPerShare)
+                .distributionType(DistributionType.REGULAR)
+                .eventStatus(DistributionEventStatus.ESTIMATED)
+                .estimateMethod(EstimateMethod.TRAILING_TWELVE_MONTHS)
+                .estimateConfidence(EstimateConfidence.LOW)
+                .dataStatus(DataStatus.ESTIMATED)
+                .rawAmountPerShare(amountPerShare)
+                .provider((quote != null ? quote.source() : "market") + ":" + MARKET_ESTIMATE_PROVIDER)
+                .sourceUpdatedAt(Instant.now())
+                .build();
+        upsertMarketEstimateEvent(event);
     }
 
     @Transactional
@@ -388,15 +464,84 @@ public class DistributionCalculationService {
             return actualSum.setScale(6, RoundingMode.HALF_UP);
         }
 
+        Optional<DistributionEvent> marketEstimate = events.stream()
+                .filter(this::isMarketYieldEstimate)
+                .filter(event -> event.getAmountPerShare() != null && event.getAmountPerShare().compareTo(BigDecimal.ZERO) > 0)
+                .findFirst();
+        int payments = paymentsPerYear(profile.getObservedFrequency());
+        if (marketEstimate.isPresent() && payments > 0) {
+            return marketEstimate.get().getAmountPerShare()
+                    .multiply(BigDecimal.valueOf(payments))
+                    .setScale(6, RoundingMode.HALF_UP);
+        }
+
         BigDecimal referenceAmount = median(events.stream()
                 .limit(policy.recentSampleSize(profile.getObservedFrequency()))
                 .map(DistributionEvent::getAmountPerShare)
                 .filter(Objects::nonNull)
                 .toList());
         if (referenceAmount == null || profile.getObservedFrequency() == DistributionFrequency.IRREGULAR) return null;
-        int payments = paymentsPerYear(profile.getObservedFrequency());
         if (payments <= 0) return null;
         return referenceAmount.multiply(BigDecimal.valueOf(payments)).setScale(6, RoundingMode.HALF_UP);
+    }
+
+    private boolean hasTrustedDistributionData(List<DistributionEvent> events) {
+        return events.stream()
+                .anyMatch(event -> event.getDataStatus() == DataStatus.ACTUAL
+                        || ACTUAL_STATUSES.contains(event.getEventStatus())
+                        || (event.getDataStatus() == DataStatus.USER_ENTERED && !isLegacyDividend(event)));
+    }
+
+    private MarketDto.Quote fetchQuote(Stock stock) {
+        try {
+            return marketDataService.quote(inferMarket(stock), stock.getTicker());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private DistributionFrequency inferFrequencyFromQuote(Stock stock, BigDecimal dividendYield) {
+        DistributionFrequency frequency = inferFrequencyFromName(stock.getTicker(), stock.getName());
+        if (frequency != DistributionFrequency.UNKNOWN) return frequency;
+        if (dividendYield == null || dividendYield.compareTo(BigDecimal.ZERO) <= 0) return DistributionFrequency.UNKNOWN;
+
+        String market = inferMarket(stock);
+        String ticker = stock.getTicker() == null ? "" : stock.getTicker().trim().toUpperCase(Locale.ROOT);
+        if (List.of("005930", "005935", "000660").contains(ticker)) return DistributionFrequency.QUARTERLY;
+        if ("US".equals(market)) return DistributionFrequency.QUARTERLY;
+        return DistributionFrequency.ANNUAL;
+    }
+
+    private DistributionEvent upsertMarketEstimateEvent(DistributionEvent event) {
+        Optional<DistributionEvent> existing = eventRepository.findByInstrumentKey(event.getInstrumentKey()).stream()
+                .filter(this::isMarketYieldEstimate)
+                .max(eventComparator());
+        if (existing.isEmpty()) return saveIfAbsent(event);
+
+        DistributionEvent target = existing.get();
+        target.setInstrumentName(event.getInstrumentName());
+        target.setMarket(event.getMarket());
+        target.setCurrency(event.getCurrency());
+        target.setExDividendDate(event.getExDividendDate());
+        target.setPaymentDate(event.getPaymentDate());
+        target.setAmountPerShare(event.getAmountPerShare());
+        target.setDistributionType(event.getDistributionType());
+        target.setEventStatus(event.getEventStatus());
+        target.setEstimateMethod(event.getEstimateMethod());
+        target.setEstimateConfidence(event.getEstimateConfidence());
+        target.setDataStatus(event.getDataStatus());
+        target.setRawAmountPerShare(event.getRawAmountPerShare());
+        target.setProvider(event.getProvider());
+        target.setSourceUpdatedAt(event.getSourceUpdatedAt());
+        return target;
+    }
+
+    private boolean isMarketYieldEstimate(DistributionEvent event) {
+        return event.getProvider() != null && event.getProvider().contains(MARKET_ESTIMATE_PROVIDER);
+    }
+
+    private boolean isLegacyDividend(DistributionEvent event) {
+        return "legacy-dividend".equals(event.getProvider());
     }
 
     private Projection nextProjection(List<DistributionEvent> events, DistributionProfile profile) {
@@ -603,6 +748,8 @@ public class DistributionCalculationService {
         if (frequency != null && frequency != DistributionFrequency.UNKNOWN) {
             profile.setDeclaredFrequency(frequency);
             profile.setObservedFrequency(frequency);
+            profile.setPaymentsLast12Months(paymentsPerYear(frequency));
+            profile.setFrequencyConfidence(EstimateConfidence.LOW);
         }
         profile.setSource(source);
         profile.setDataStatus(dataStatus);
@@ -819,6 +966,26 @@ public class DistributionCalculationService {
     private DistributionFrequency inferFrequencyFromName(String ticker, String name) {
         String normalizedTicker = ticker == null ? "" : ticker.trim().toUpperCase();
         String normalizedName = name == null ? "" : name.toUpperCase(Locale.ROOT);
+        if (List.of(
+                "NVDY", "TSLY", "CONY", "MSTY", "YMAX", "YMAG", "FEPI", "AIPI", "SPYI", "QQQI", "JEPY", "QQQY",
+                "XDTE", "QDTE", "RDTE", "BIL", "SGOV", "USFR"
+        ).contains(normalizedTicker)
+                || normalizedName.contains("PREMIUM INCOME")
+                || normalizedName.contains("YIELDMAX")
+                || normalizedName.contains("월배당")
+                || normalizedName.contains("월분배")
+                || normalizedName.contains("매월")
+                || normalizedName.contains("커버드콜")) {
+            return DistributionFrequency.MONTHLY;
+        }
+        if (normalizedName.contains("반기") || normalizedName.contains("SEMI")) {
+            return DistributionFrequency.SEMIANNUAL;
+        }
+        if (List.of("DGRO", "NOBL", "SDY", "IVV", "SPLG", "VIG", "VUG", "IWM", "VNQ", "EFA", "EEM", "005930", "005935", "000660").contains(normalizedTicker)
+                || normalizedName.contains("분기")
+                || normalizedName.contains("QUARTERLY")) {
+            return DistributionFrequency.QUARTERLY;
+        }
         if (List.of("JEPI", "JEPQ", "QYLD", "RYLD", "XYLD", "DIA", "O", "TLT", "IEF", "SHY", "BND", "AGG", "HYG", "LQD").contains(normalizedTicker)
                 || normalizedName.contains("MONTHLY")
                 || normalizedName.contains("COVERED CALL")

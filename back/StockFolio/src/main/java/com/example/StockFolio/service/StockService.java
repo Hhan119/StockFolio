@@ -23,6 +23,7 @@ public class StockService {
     private final StockRepository stockRepository;
     private final PortfolioRepository portfolioRepository;
     private final PortfolioService portfolioService;
+    private final DistributionCalculationService distributionCalculationService;
 
     @Transactional
     public List<StockDto.Response> getStocks(Long portfolioId, Long userId) {
@@ -62,6 +63,7 @@ public class StockService {
             existing.setSector(req.getSector() != null ? req.getSector() : existing.getSector());
             existing.setCurrency(req.getCurrency() != null ? req.getCurrency() : existing.getCurrency());
             existing.setMemo(req.getMemo() != null && !req.getMemo().isBlank() ? req.getMemo() : existing.getMemo());
+            distributionCalculationService.seedDistributionForStock(existing);
             return portfolioService.toStockResponse(existing);
         }
 
@@ -78,7 +80,9 @@ public class StockService {
                 .memo(req.getMemo())
                 .build();
 
-        return portfolioService.toStockResponse(stockRepository.save(stock));
+        Stock saved = stockRepository.save(stock);
+        distributionCalculationService.seedDistributionForStock(saved);
+        return portfolioService.toStockResponse(saved);
     }
 
     @Transactional

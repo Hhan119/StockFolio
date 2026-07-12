@@ -366,14 +366,14 @@ function MyPortfolioPage() {
   }, [editingStock]);
 
   return (
-    <section className="rounded-2xl bg-slate-950 p-3 text-slate-100 ring-1 ring-slate-800/80 sm:p-4 lg:p-5">
+    <section className="max-w-full overflow-hidden rounded-2xl bg-slate-950 p-3 text-slate-100 ring-1 ring-slate-800/80 sm:p-4 lg:p-5">
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="mb-1 text-xs font-black uppercase tracking-wider text-cyan-300">내 포트폴리오</p>
           <h2 className="text-2xl font-black text-white sm:text-3xl">보유자산</h2>
           <p className="mt-1 max-w-3xl text-sm font-bold text-slate-400">모바일, 태블릿, 노트북, 데스크탑 화면에 맞춰 자산과 보유종목을 정리합니다.</p>
         </div>
-        <div className="grid w-full gap-2 sm:w-auto sm:min-w-[280px]">
+        <div className="grid w-full min-w-0 gap-2 sm:w-auto sm:min-w-[280px]">
           <label className="grid gap-1 text-xs font-black uppercase tracking-wider text-slate-500">
             포트폴리오 선택
             <select
@@ -398,8 +398,8 @@ function MyPortfolioPage() {
         </div>
       </div>
 
-      <section className="mb-4 overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900 shadow-sm">
-        <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px]">
+      <section className="mb-4 max-w-full overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900 shadow-sm">
+        <div className="grid min-w-0 gap-0 2xl:grid-cols-[minmax(0,1fr)_380px]">
           <div className="grid gap-4 p-4 sm:p-5">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div>
@@ -422,7 +422,7 @@ function MyPortfolioPage() {
             </div>
           </div>
 
-          <aside className="border-t border-slate-700/80 bg-slate-950 p-4 xl:border-l xl:border-t-0">
+          <aside className="min-w-0 border-t border-slate-700/80 bg-slate-950 p-4 2xl:border-l 2xl:border-t-0">
             <div className="mx-auto grid h-44 w-44 place-items-center rounded-full shadow-sm sm:h-52 sm:w-52" style={pieStyle}>
               <div className="grid h-24 w-24 place-items-center rounded-full bg-slate-950 text-center ring-1 ring-slate-800 sm:h-28 sm:w-28">
                 <span className="text-xs font-black text-slate-500">종목 수</span>
@@ -448,9 +448,9 @@ function MyPortfolioPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px]">
-        <main className="grid gap-4">
-          <section className="rounded-2xl border border-slate-700/80 bg-slate-900 p-3 shadow-sm sm:p-4">
+      <section className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
+        <main className="grid min-w-0 gap-4">
+          <section className="min-w-0 rounded-2xl border border-slate-700/80 bg-slate-900 p-3 shadow-sm sm:p-4">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h3 className="font-black text-white">종목 검색</h3>
@@ -480,7 +480,7 @@ function MyPortfolioPage() {
 
             <div className="mt-2 grid max-h-56 gap-2 overflow-y-auto rounded-2xl border border-slate-800 bg-slate-950 p-2 sm:max-h-64 lg:max-h-72">
               {results.map((item) => (
-                <article className="grid gap-2 rounded-xl bg-slate-900 p-2.5 hover:bg-slate-800 sm:grid-cols-[1fr_auto]" key={`${item.market}-${item.ticker}`}>
+                <article className="grid min-w-0 gap-2 rounded-xl bg-slate-900 p-2.5 hover:bg-slate-800 sm:grid-cols-[minmax(0,1fr)_auto]" key={`${item.market}-${item.ticker}`}>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <strong className="text-sm text-white">{item.name}</strong>
@@ -499,13 +499,13 @@ function MyPortfolioPage() {
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900 shadow-sm">
+          <section className="max-w-full overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900 shadow-sm">
             <div className="border-b border-slate-800 p-4">
               <h3 className="font-black text-white">보유종목</h3>
               <p className="mt-1 text-sm font-bold text-slate-500">동일 종목은 수량과 평균단가가 자동 합산됩니다.</p>
             </div>
-            <div className="hidden overflow-x-auto lg:block">
-              <table className="w-full min-w-[1640px] border-collapse text-sm">
+            <div className="hidden max-w-full overflow-x-auto lg:block">
+              <table className="w-full min-w-[1280px] border-collapse text-sm">
                 <thead className="bg-slate-950 text-left text-xs uppercase tracking-wider text-slate-500">
                   <tr><th className="px-4 py-3">종목명</th><th>티커</th><th>구분</th><th>수량</th><th>평균단가</th><th>현재가</th><th>평가금액</th><th>손익</th><th>수익률</th><th>지급 패턴</th><th>최근 1회</th><th>최근 12개월</th><th>예상 연 분배금</th><th>다음 지급</th><th>관리</th></tr>
                 </thead>
@@ -599,7 +599,7 @@ function MyPortfolioPage() {
           </section>
         </main>
 
-        <aside className="grid content-start gap-4">
+        <aside className="grid min-w-0 content-start gap-4">
           <section className="rounded-2xl border border-slate-700/80 bg-slate-900 p-4 shadow-sm">
             <h3 className="font-black text-white">배당금</h3>
             <div className="mt-3 grid gap-2">
@@ -630,7 +630,7 @@ function MyPortfolioPage() {
 
       {modalStock && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80 p-4">
-          <form className="w-full max-w-2xl rounded-2xl border border-slate-700/80 bg-slate-900 p-5 text-white shadow-sm" onSubmit={saveHolding}>
+          <form className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-700/80 bg-slate-900 p-5 text-white shadow-sm" onSubmit={saveHolding}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-black uppercase tracking-wider text-cyan-300">보유종목 등록</p>
@@ -656,7 +656,7 @@ function MyPortfolioPage() {
 
       {editingStock && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80 p-4">
-          <form className="w-full max-w-2xl rounded-2xl border border-slate-700/80 bg-slate-900 p-5 text-white shadow-sm" onSubmit={updateHolding}>
+          <form className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-700/80 bg-slate-900 p-5 text-white shadow-sm" onSubmit={updateHolding}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-black uppercase tracking-wider text-cyan-300">보유종목 수정</p>

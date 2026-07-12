@@ -102,7 +102,6 @@ public class DividendService {
 
     @Transactional
     public DividendDto.AnnualSummary getAnnualSummary(Long portfolioId, Long userId) {
-        backfillAutoDividends(portfolioId, userId);
         return distributionCalculationService.getLegacyAnnualSummary(portfolioId, userId);
     }
 
