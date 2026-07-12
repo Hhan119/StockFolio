@@ -49,6 +49,10 @@ import lombok.RequiredArgsConstructor;
 public class DistributionCalculationService {
 
     private static final String MARKET_ESTIMATE_PROVIDER = "market-yield-estimate";
+    private static final String LOCAL_ETF_ESTIMATE_PROVIDER = "local-etf-dividend-estimate";
+    private static final Set<String> KOREAN_ETF_BRANDS = Set.of(
+            "KODEX", "TIGER", "RISE", "ACE", "SOL", "PLUS", "KBSTAR", "KOSEF", "HANARO", "TIMEFOLIO", "WON"
+    );
 
     private static final Set<DistributionEventStatus> ACTUAL_STATUSES = Set.of(
             DistributionEventStatus.PAID,
@@ -241,39 +245,46 @@ public class DistributionCalculationService {
                 ? quote.currentPrice()
                 : stock.getCurrentPrice();
         int payments = paymentsPerYear(frequency);
-        if (currentPrice == null || currentPrice.compareTo(BigDecimal.ZERO) <= 0 || dividendYield.compareTo(BigDecimal.ZERO) <= 0 || payments <= 0) {
-            return;
+        if (currentPrice != null
+                && currentPrice.compareTo(BigDecimal.ZERO) > 0
+                && dividendYield.compareTo(BigDecimal.ZERO) > 0
+                && payments > 0) {
+            BigDecimal annualAmountPerShare = currentPrice
+                    .multiply(dividendYield)
+                    .divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP);
+            BigDecimal amountPerShare = annualAmountPerShare
+                    .divide(BigDecimal.valueOf(payments), 6, RoundingMode.HALF_UP);
+            if (amountPerShare.compareTo(BigDecimal.ZERO) > 0) {
+                LocalDate paymentDate = nextPaymentDate(profile, events);
+                if (paymentDate == null) paymentDate = LocalDate.now().plusMonths(1).withDayOfMonth(15);
+
+                DistributionEvent event = DistributionEvent.builder()
+                        .instrumentKey(profile.getInstrumentKey())
+                        .ticker(stock.getTicker())
+                        .instrumentName(stock.getName())
+                        .market(inferMarket(stock))
+                        .currency(normalizeCurrency(stock.getCurrency()))
+                        .exDividendDate(paymentDate.minusDays(7))
+                        .paymentDate(paymentDate)
+                        .amountPerShare(amountPerShare)
+                        .distributionType(DistributionType.REGULAR)
+                        .eventStatus(DistributionEventStatus.ESTIMATED)
+                        .estimateMethod(EstimateMethod.TRAILING_TWELVE_MONTHS)
+                        .estimateConfidence(EstimateConfidence.LOW)
+                        .dataStatus(DataStatus.ESTIMATED)
+                        .rawAmountPerShare(amountPerShare)
+                        .provider((quote != null ? quote.source() : "market") + ":" + MARKET_ESTIMATE_PROVIDER)
+                        .sourceUpdatedAt(Instant.now())
+                        .build();
+                upsertMarketEstimateEvent(event);
+                return;
+            }
         }
 
-        BigDecimal annualAmountPerShare = currentPrice
-                .multiply(dividendYield)
-                .divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP);
-        BigDecimal amountPerShare = annualAmountPerShare
-                .divide(BigDecimal.valueOf(payments), 6, RoundingMode.HALF_UP);
-        if (amountPerShare.compareTo(BigDecimal.ZERO) <= 0) return;
-
-        LocalDate paymentDate = nextPaymentDate(profile, events);
-        if (paymentDate == null) paymentDate = LocalDate.now().plusMonths(1).withDayOfMonth(15);
-
-        DistributionEvent event = DistributionEvent.builder()
-                .instrumentKey(profile.getInstrumentKey())
-                .ticker(stock.getTicker())
-                .instrumentName(stock.getName())
-                .market(inferMarket(stock))
-                .currency(normalizeCurrency(stock.getCurrency()))
-                .exDividendDate(paymentDate.minusDays(7))
-                .paymentDate(paymentDate)
-                .amountPerShare(amountPerShare)
-                .distributionType(DistributionType.REGULAR)
-                .eventStatus(DistributionEventStatus.ESTIMATED)
-                .estimateMethod(EstimateMethod.TRAILING_TWELVE_MONTHS)
-                .estimateConfidence(EstimateConfidence.LOW)
-                .dataStatus(DataStatus.ESTIMATED)
-                .rawAmountPerShare(amountPerShare)
-                .provider((quote != null ? quote.source() : "market") + ":" + MARKET_ESTIMATE_PROVIDER)
-                .sourceUpdatedAt(Instant.now())
-                .build();
-        upsertMarketEstimateEvent(event);
+        List<MarketDto.DividendEvent> localEtfEstimate = localEtfDividendEstimate(stock, currentPrice);
+        if (!localEtfEstimate.isEmpty()) {
+            seedDistributionHistory(stock, localEtfEstimate);
+        }
     }
 
     @Transactional
@@ -614,6 +625,114 @@ public class DistributionCalculationService {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private List<MarketDto.DividendEvent> localEtfDividendEstimate(Stock stock, BigDecimal currentPrice) {
+        DistributionFrequency frequency = inferLocalEtfFrequency(stock);
+        int payments = paymentsPerYear(frequency);
+        if (payments <= 0) return List.of();
+
+        BigDecimal price = currentPrice != null && currentPrice.compareTo(BigDecimal.ZERO) > 0
+                ? currentPrice
+                : stock.getCurrentPrice();
+        if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) return List.of();
+
+        BigDecimal annualYield = estimatedAnnualYield(stock);
+        if (annualYield.compareTo(BigDecimal.ZERO) <= 0) return List.of();
+
+        BigDecimal amountPerShare = price
+                .multiply(annualYield)
+                .divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)
+                .divide(BigDecimal.valueOf(payments), 6, RoundingMode.HALF_UP);
+        if (amountPerShare.compareTo(BigDecimal.ZERO) <= 0) return List.of();
+
+        int interval = switch (frequency) {
+            case MONTHLY -> 1;
+            case QUARTERLY -> 3;
+            case SEMIANNUAL -> 6;
+            case ANNUAL -> 12;
+            case IRREGULAR, NONE, UNKNOWN -> 0;
+        };
+        if (interval <= 0) return List.of();
+
+        LocalDate latestPaymentDate = latestEstimatedPaymentDate(interval, defaultBaseMonth(frequency));
+        int count = Math.max(1, Math.min(12, payments));
+        List<MarketDto.DividendEvent> events = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            LocalDate paymentDate = latestPaymentDate.minusMonths((long) interval * index);
+            events.add(new MarketDto.DividendEvent(
+                    inferMarket(stock),
+                    stock.getTicker(),
+                    normalizeCurrency(stock.getCurrency()),
+                    paymentDate.minusDays(7),
+                    paymentDate,
+                    amountPerShare,
+                    LOCAL_ETF_ESTIMATE_PROVIDER
+            ));
+        }
+        return events;
+    }
+
+    private LocalDate latestEstimatedPaymentDate(int intervalMonths, int baseMonth) {
+        LocalDate today = LocalDate.now();
+        LocalDate candidate = YearMonth.from(today).atDay(Math.min(15, YearMonth.from(today).lengthOfMonth()));
+        while (candidate.isAfter(today) || Math.floorMod(candidate.getMonthValue() - baseMonth, intervalMonths) != 0) {
+            YearMonth previous = YearMonth.from(candidate.minusMonths(1));
+            candidate = previous.atDay(Math.min(15, previous.lengthOfMonth()));
+        }
+        return candidate;
+    }
+
+    private DistributionFrequency inferLocalEtfFrequency(Stock stock) {
+        DistributionFrequency named = inferFrequencyFromName(stock.getTicker(), stock.getName());
+        if (named != DistributionFrequency.UNKNOWN) return named;
+        if (!isEtfLike(stock) || isNonDistributionEtfLike(stock)) return DistributionFrequency.UNKNOWN;
+
+        String text = instrumentText(stock);
+        if (text.contains("채권") || text.contains("BOND") || text.contains("국고") || text.contains("회사채")) {
+            return DistributionFrequency.MONTHLY;
+        }
+        if (text.contains("배당") || text.contains("DIVIDEND") || text.contains("리츠") || text.contains("REIT")) {
+            return "KR".equals(inferMarket(stock)) ? DistributionFrequency.MONTHLY : DistributionFrequency.QUARTERLY;
+        }
+        return DistributionFrequency.UNKNOWN;
+    }
+
+    private BigDecimal estimatedAnnualYield(Stock stock) {
+        String text = instrumentText(stock);
+        if (isNonDistributionEtfLike(stock)) return BigDecimal.ZERO;
+        if (isCoveredCallLike(stock)) return new BigDecimal("8.00");
+        if (text.contains("리츠") || text.contains("REIT")) return new BigDecimal("4.00");
+        if (text.contains("채권") || text.contains("BOND") || text.contains("국고") || text.contains("회사채")) return new BigDecimal("3.50");
+        if (text.contains("배당") || text.contains("DIVIDEND")) return new BigDecimal("3.00");
+        return BigDecimal.ZERO;
+    }
+
+    private boolean isEtfLike(Stock stock) {
+        String text = instrumentText(stock);
+        return KOREAN_ETF_BRANDS.stream().anyMatch(text::contains)
+                || text.contains("ETF")
+                || text.contains("ETN")
+                || text.contains("펀드")
+                || text.contains("채권")
+                || text.contains("커버드콜")
+                || text.contains("DIVIDEND")
+                || text.contains("REIT");
+    }
+
+    private boolean isNonDistributionEtfLike(Stock stock) {
+        String text = instrumentText(stock);
+        return text.contains("레버리지")
+                || text.contains("인버스")
+                || text.contains("선물인버스")
+                || text.contains("토탈리턴")
+                || text.endsWith(" TR")
+                || text.contains(" TR ");
+    }
+
+    private String instrumentText(Stock stock) {
+        return ((stock.getTicker() == null ? "" : stock.getTicker()) + " " + (stock.getName() == null ? "" : stock.getName()))
+                .toUpperCase(Locale.ROOT);
     }
 
     private DistributionFrequency inferFrequencyFromQuote(Stock stock, BigDecimal dividendYield) {
@@ -1091,7 +1210,8 @@ public class DistributionCalculationService {
                 || normalizedName.contains("월배당")
                 || normalizedName.contains("월분배")
                 || normalizedName.contains("매월")
-                || normalizedName.contains("커버드콜")) {
+                || normalizedName.contains("커버드콜")
+                || normalizedName.contains("프리미엄")) {
             return DistributionFrequency.MONTHLY;
         }
         if (normalizedName.contains("반기") || normalizedName.contains("SEMI")) {
@@ -1121,6 +1241,7 @@ public class DistributionCalculationService {
         return text.contains("COVERED CALL")
                 || text.contains("YIELDMAX")
                 || text.contains("PREMIUM INCOME")
+                || text.contains("프리미엄")
                 || text.contains("커버드콜")
                 || List.of("JEPI", "JEPQ", "QYLD", "RYLD", "XYLD", "NVDY", "TSLY", "CONY", "MSTY").contains(stock.getTicker());
     }

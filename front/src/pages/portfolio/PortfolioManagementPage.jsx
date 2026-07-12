@@ -13,6 +13,7 @@ function PortfolioManagementPage() {
   const [selectedId, setSelectedId] = useState("");
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [portfolioForm, setPortfolioForm] = useState(emptyPortfolioForm);
+  const [saveMode, setSaveMode] = useState("new");
   const [searchMarket, setSearchMarket] = useState("ALL");
   const [keyword, setKeyword] = useState("");
   const [results, setResults] = useState([]);
@@ -229,14 +230,18 @@ function PortfolioManagementPage() {
   };
 
   const savePortfolio = async () => {
-    if (!portfolioForm.name.trim()) {
+    if (!draftHoldings.length) {
+      setError("저장할 종목을 먼저 담아주세요.");
+      return;
+    }
+    if (saveMode === "new" && !portfolioForm.name.trim()) {
       const nextError = "포트폴리오 이름을 입력해주세요.";
       window.alert(nextError);
       setError(nextError);
       return;
     }
-    if (!draftHoldings.length) {
-      setError("저장할 종목을 먼저 담아주세요.");
+    if (saveMode === "existing" && !selectedId) {
+      setError("종목을 추가할 포트폴리오를 먼저 선택해주세요.");
       return;
     }
 
@@ -244,15 +249,20 @@ function PortfolioManagementPage() {
     setMessage("");
     setError("");
     try {
-      const created = await portfolioService.create({
-        name: portfolioForm.name.trim(),
-        description: portfolioForm.description.trim(),
-        initialCapital: draftSummary.totalCost,
-      });
+      let targetId = selectedId;
+      let created = null;
+      if (saveMode === "new") {
+        created = await portfolioService.create({
+          name: portfolioForm.name.trim(),
+          description: portfolioForm.description.trim(),
+          initialCapital: draftSummary.totalCost,
+        });
+        targetId = created.id;
+      }
 
       for (const holding of draftHoldings) {
         await portfolioService.addStock({
-          portfolioId: created.id,
+          portfolioId: targetId,
           ticker: holding.ticker,
           name: holding.name,
           quantity: holding.quantity,
@@ -268,11 +278,14 @@ function PortfolioManagementPage() {
       setDraftHoldings([]);
       setSelectedStock(null);
       setResults([]);
-      await loadPortfolios(created.id);
-      await loadSelectedDetail(created.id);
-      setMessage("종목 묶음을 새 포트폴리오로 저장했습니다. 배당 정보는 가능한 경우 자동 연결됩니다.");
+      setSaveMode("existing");
+      await loadPortfolios(targetId);
+      await loadSelectedDetail(targetId);
+      setMessage(saveMode === "new"
+        ? "종목 묶음을 새 포트폴리오로 저장했습니다. 배당 정보는 가능한 경우 자동 연결됩니다."
+        : `${selectedSummary?.name || created?.name || "선택한 포트폴리오"}에 종목을 추가했습니다. 동일 종목은 수량과 평균단가가 합산됩니다.`);
     } catch {
-      setError("포트폴리오 저장에 실패했습니다.");
+      setError(saveMode === "new" ? "포트폴리오 저장에 실패했습니다." : "선택한 포트폴리오에 종목을 추가하지 못했습니다.");
     } finally {
       setLoading(false);
     }
@@ -297,7 +310,7 @@ function PortfolioManagementPage() {
   const selectedStocks = selectedDetail?.stocks || [];
 
   return (
-    <section className="grid gap-4">
+    <section className="grid w-full min-w-0 max-w-full gap-4">
       <header className="rounded-2xl bg-slate-950 p-6 text-white shadow-sm lg:p-8">
         <p className="text-xs font-black uppercase tracking-wider text-cyan-300">Portfolio Builder</p>
         <div className="mt-2 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
@@ -321,30 +334,66 @@ function PortfolioManagementPage() {
 
       <div className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
         <main className="grid min-w-0 gap-4">
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="grid gap-4 xl:grid-cols-2">
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
+            <div className="grid min-w-0 gap-4 xl:grid-cols-2">
               <div className="grid content-start gap-3">
                 <div className="flex min-h-11 items-center">
-                  <h3 className="text-xl font-black text-slate-950 dark:text-white">1. 포트폴리오 정보</h3>
+                  <h3 className="text-xl font-black text-slate-950 dark:text-white">1. 저장 방식</h3>
                 </div>
-                <label className="grid gap-1 text-sm font-bold text-slate-700 dark:text-slate-200">
-                  포트폴리오 이름
-                  <input
-                    className="form-control bg-slate-50 dark:bg-slate-800"
-                    placeholder="예: 장기 배당 포트폴리오"
-                    value={portfolioForm.name}
-                    onChange={(event) => setPortfolioForm({ ...portfolioForm, name: event.target.value })}
-                  />
-                </label>
-                <label className="grid gap-1 text-sm font-bold text-slate-700 dark:text-slate-200">
-                  설명
-                  <input
-                    className="form-control bg-slate-50 dark:bg-slate-800"
-                    placeholder="투자 목적이나 전략을 적어주세요"
-                    value={portfolioForm.description}
-                    onChange={(event) => setPortfolioForm({ ...portfolioForm, description: event.target.value })}
-                  />
-                </label>
+                <div className="grid grid-cols-2 rounded-2xl bg-slate-100 p-1 text-xs font-black dark:bg-slate-800">
+                  <button
+                    className={`rounded-xl px-3 py-2 transition ${saveMode === "new" ? "bg-cyan-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-200 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white"}`}
+                    onClick={() => setSaveMode("new")}
+                    type="button"
+                  >
+                    새로 만들기
+                  </button>
+                  <button
+                    className={`rounded-xl px-3 py-2 transition disabled:cursor-not-allowed disabled:opacity-50 ${saveMode === "existing" ? "bg-cyan-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-200 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white"}`}
+                    disabled={!portfolios.length}
+                    onClick={() => setSaveMode("existing")}
+                    type="button"
+                  >
+                    기존에 추가
+                  </button>
+                </div>
+                {saveMode === "new" ? (
+                  <>
+                    <label className="grid gap-1 text-sm font-bold text-slate-700 dark:text-slate-200">
+                      포트폴리오 이름
+                      <input
+                        className="form-control bg-slate-50 dark:bg-slate-800"
+                        placeholder="예: 장기 배당 포트폴리오"
+                        value={portfolioForm.name}
+                        onChange={(event) => setPortfolioForm({ ...portfolioForm, name: event.target.value })}
+                      />
+                    </label>
+                    <label className="grid gap-1 text-sm font-bold text-slate-700 dark:text-slate-200">
+                      설명
+                      <input
+                        className="form-control bg-slate-50 dark:bg-slate-800"
+                        placeholder="투자 목적이나 전략을 적어주세요"
+                        value={portfolioForm.description}
+                        onChange={(event) => setPortfolioForm({ ...portfolioForm, description: event.target.value })}
+                      />
+                    </label>
+                  </>
+                ) : (
+                  <label className="grid gap-1 text-sm font-bold text-slate-700 dark:text-slate-200">
+                    추가할 포트폴리오
+                    <select
+                      className="form-control bg-slate-50 dark:bg-slate-800"
+                      value={selectedId}
+                      onChange={(event) => setSelectedId(event.target.value)}
+                    >
+                      {portfolios.map((portfolio) => (
+                        <option key={portfolio.id} value={portfolio.id}>
+                          {portfolio.name} · {portfolio.stockCount || 0}개 종목
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <div className="grid grid-cols-2 gap-2">
                   <Metric label="투자금" value={formatMoney(draftSummary.totalCost)} />
                   <Metric label="평가금액" value={formatMoney(draftSummary.totalValue)} />
@@ -447,12 +496,12 @@ function PortfolioManagementPage() {
                 <p className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Draft Holdings</p>
                 <h3 className="mt-1 text-2xl font-black text-slate-950 dark:text-white">저장 전 종목 묶음</h3>
               </div>
-              <button className="btn-muted min-h-12 text-sm" disabled={loading || !draftHoldings.length} onClick={savePortfolio} type="button">
-                이 구성으로 포트폴리오 저장
+              <button className="btn-muted min-h-12 text-sm" disabled={loading || !draftHoldings.length || (saveMode === "existing" && !selectedId)} onClick={savePortfolio} type="button">
+                {saveMode === "existing" ? "선택 포트폴리오에 추가" : "새 포트폴리오 저장"}
               </button>
             </div>
 
-            <div className="mt-4 overflow-x-auto">
+            <div className="table-scroll mt-4 hidden max-w-full overflow-x-auto lg:block" tabIndex={0}>
               <table className="w-full min-w-[760px] text-left text-sm">
                 <thead className="border-b border-slate-200 text-xs font-black uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:text-slate-400">
                   <tr>
@@ -483,8 +532,29 @@ function PortfolioManagementPage() {
                   ))}
                 </tbody>
               </table>
-              {!draftHoldings.length && <p className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">아직 담은 종목이 없습니다. 위에서 종목을 검색해 추가해주세요.</p>}
             </div>
+            <div className="mt-4 grid gap-2 lg:hidden">
+              {draftHoldings.map((holding) => (
+                <article className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950" key={holding.key}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <strong className="block truncate text-sm font-black text-slate-950 dark:text-white">{holding.name}</strong>
+                      <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{holding.ticker}</span>
+                    </div>
+                    <button className="rounded-xl bg-slate-200 px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-rose-600 hover:text-white dark:bg-slate-800 dark:text-slate-200" onClick={() => removeDraftHolding(holding.key)} type="button">
+                      제거
+                    </button>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-sm font-bold text-slate-600 dark:text-slate-300">
+                    <span>수량 {holding.quantity.toLocaleString("ko-KR")}</span>
+                    <span>평단 {formatMoney(holding.averagePrice, holding.currency)}</span>
+                    <span>현재 {formatMoney(holding.currentPrice, holding.currency)}</span>
+                    <span>평가 {formatMoney(holding.currentPrice * holding.quantity, holding.currency)}</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+            {!draftHoldings.length && <p className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">아직 담은 종목이 없습니다. 위에서 종목을 검색해 추가해주세요.</p>}
           </section>
 
           <SavedPortfolioDetail
@@ -511,6 +581,20 @@ function PortfolioManagementPage() {
                 </button>
               </div>
             </div>
+            {selectedSummary && (
+              <button
+                className="mt-3 w-full rounded-2xl bg-cyan-600 px-3 py-2 text-sm font-black text-white shadow-sm transition hover:bg-cyan-500"
+                onClick={() => {
+                  setSaveMode("existing");
+                  setSavedPanelOpen(false);
+                  document.querySelector("[data-app-scroll]")?.scrollTo?.({ top: 0, behavior: "smooth" });
+                  window.scrollTo?.({ top: 0, behavior: "smooth" });
+                }}
+                type="button"
+              >
+                선택 포트폴리오에 종목 추가
+              </button>
+            )}
             {!savedPanelOpen && selectedSummary && (
               <button
                 className="mt-4 w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-cyan-300 hover:bg-cyan-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-cyan-800 dark:hover:bg-cyan-950"
@@ -629,7 +713,7 @@ function SavedPortfolioDetail({ detail, stocks, onDelete, onEditStock, onRemoveS
         <Metric label="수익률" value={formatPercent(detail?.totalProfitLossRate || 0)} tone={Number(detail?.totalProfitLossRate || 0) >= 0 ? "positive" : "negative"} />
       </div>
 
-      <div className="mt-5 overflow-x-auto">
+      <div className="table-scroll mt-5 hidden max-w-full overflow-x-auto lg:block" tabIndex={0}>
         <table className="w-full min-w-[1080px] text-left text-sm">
           <thead className="border-b border-slate-200 text-xs font-black uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:text-slate-400">
             <tr>
@@ -675,8 +759,41 @@ function SavedPortfolioDetail({ detail, stocks, onDelete, onEditStock, onRemoveS
             ))}
           </tbody>
         </table>
-        {!stocks.length && <p className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">선택한 포트폴리오에 등록된 종목이 없습니다.</p>}
       </div>
+      <div className="mt-5 grid gap-2 lg:hidden">
+        {stocks.map((stock) => (
+          <article className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950" key={stock.id}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <strong className="block truncate text-sm font-black text-slate-950 dark:text-white">{stock.name}</strong>
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{stock.ticker}</span>
+              </div>
+              <span className={Number(stock.profitLossRate || 0) >= 0 ? "text-sm font-black text-cyan-700 dark:text-cyan-300" : "text-sm font-black text-rose-600 dark:text-rose-300"}>
+                {formatPercent(stock.profitLossRate)}
+              </span>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm font-bold text-slate-600 dark:text-slate-300">
+              <span>수량 {Number(stock.quantity || 0).toLocaleString("ko-KR")}</span>
+              <span>평단 {formatMoney(stock.avgPrice, stock.currency)}</span>
+              <span>현재 {formatMoney(stock.currentPrice, stock.currency)}</span>
+              <span>평가 {formatMoney(stock.totalValue, stock.currency)}</span>
+              <span>투자금 {formatMoney(stock.totalCost, stock.currency)}</span>
+              <span className={Number(stock.profitLoss || 0) >= 0 ? "text-cyan-700 dark:text-cyan-300" : "text-rose-600 dark:text-rose-300"}>
+                손익 {formatMoney(stock.profitLoss, stock.currency)}
+              </span>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button className="rounded-xl bg-slate-200 px-3 py-2 text-sm font-black text-slate-700 hover:bg-cyan-600 hover:text-white dark:bg-slate-800 dark:text-slate-200" type="button" onClick={() => onEditStock(stock)}>
+                수정
+              </button>
+              <button className="rounded-xl bg-slate-200 px-3 py-2 text-sm font-black text-slate-700 hover:bg-rose-600 hover:text-white dark:bg-slate-800 dark:text-slate-200" type="button" onClick={() => onRemoveStock(stock)}>
+                삭제
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+      {!stocks.length && <p className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">선택한 포트폴리오에 등록된 종목이 없습니다.</p>}
     </section>
   );
 }

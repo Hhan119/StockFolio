@@ -102,6 +102,22 @@ class DistributionCalculationServiceTests {
         assertThat(summary.getMessage()).contains("0원으로 표시하지 않습니다");
     }
 
+    @Test
+    void estimatesKoreanCoveredCallEtfDistributionsWhenMarketHistoryIsMissing() {
+        Stock stock = saveHolding("475720", "TIGER 미국테크TOP10+10%프리미엄", 10, "KRW");
+        stock.setCurrentPrice(new BigDecimal("10000"));
+        stockRepository.save(stock);
+
+        DistributionDto.HoldingDistributionSummaryResponse summary =
+                distributionCalculationService.getHoldingSummary(stock.getId(), stock.getPortfolio().getUser().getId(), false);
+
+        assertThat(summary.getObservedFrequency()).isEqualTo(DistributionFrequency.MONTHLY);
+        assertThat(summary.getDataStatus()).isEqualTo(DataStatus.ESTIMATED);
+        assertThat(summary.getLatestAmountPerShare()).isGreaterThan(BigDecimal.ZERO);
+        assertThat(summary.getEstimatedAnnualGrossAmount()).isGreaterThan(BigDecimal.ZERO);
+        assertThat(summary.getProvider()).contains("local-etf-dividend-estimate");
+    }
+
     private Stock saveHolding(String ticker, String name, int quantity, String currency) {
         User user = userRepository.save(User.builder()
                 .username("user-" + ticker + "-" + System.nanoTime())
