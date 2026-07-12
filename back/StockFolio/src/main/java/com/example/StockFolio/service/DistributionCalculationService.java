@@ -525,12 +525,16 @@ public class DistributionCalculationService {
 
     private void seedDistributionHistory(Stock stock, List<MarketDto.DividendEvent> dividendHistory) {
         DistributionFrequency frequency = inferFrequencyFromHistory(stock, dividendHistory);
+        boolean estimatedHistory = isEstimatedDividendHistory(dividendHistory);
+        DataStatus historyStatus = estimatedHistory ? DataStatus.ESTIMATED : DataStatus.ACTUAL;
+        EstimateConfidence confidence = estimatedHistory ? EstimateConfidence.MEDIUM : EstimateConfidence.HIGH;
+        EstimateMethod estimateMethod = estimatedHistory ? EstimateMethod.TRAILING_TWELVE_MONTHS : EstimateMethod.DECLARED_AMOUNT;
         String source = dividendHistory.stream()
                 .map(MarketDto.DividendEvent::source)
                 .filter(Objects::nonNull)
                 .findFirst()
                 .orElse("market-dividend-history");
-        DistributionProfile profile = ensureProfile(stock, frequency, DataStatus.ACTUAL, source);
+        DistributionProfile profile = ensureProfile(stock, frequency, historyStatus, source);
         LocalDate latestDate = dividendHistory.stream()
                 .map(this::marketDividendDate)
                 .filter(Objects::nonNull)
@@ -542,8 +546,10 @@ public class DistributionCalculationService {
                 .filter(Objects::nonNull)
                 .filter(date -> !date.isBefore(LocalDate.now().minusMonths(12)))
                 .count());
-        profile.setFrequencyConfidence(profile.getPaymentsLast12Months() >= 3 ? EstimateConfidence.HIGH : EstimateConfidence.MEDIUM);
-        profile.setDataStatus(DataStatus.ACTUAL);
+        profile.setFrequencyConfidence(estimatedHistory
+                ? EstimateConfidence.MEDIUM
+                : (profile.getPaymentsLast12Months() >= 3 ? EstimateConfidence.HIGH : EstimateConfidence.MEDIUM));
+        profile.setDataStatus(historyStatus);
         profile.setSource(source);
         profile.setSourceUpdatedAt(Instant.now());
         profileRepository.save(profile);
@@ -551,9 +557,9 @@ public class DistributionCalculationService {
         for (MarketDto.DividendEvent dividend : dividendHistory) {
             LocalDate eventDate = marketDividendDate(dividend);
             if (eventDate == null || dividend.amountPerShare() == null || dividend.amountPerShare().compareTo(BigDecimal.ZERO) <= 0) continue;
-            DistributionEventStatus status = eventDate.isAfter(LocalDate.now())
-                    ? DistributionEventStatus.DECLARED
-                    : DistributionEventStatus.PAID;
+            DistributionEventStatus status = estimatedHistory
+                    ? DistributionEventStatus.ESTIMATED
+                    : (eventDate.isAfter(LocalDate.now()) ? DistributionEventStatus.DECLARED : DistributionEventStatus.PAID);
             saveIfAbsent(DistributionEvent.builder()
                     .instrumentKey(profile.getInstrumentKey())
                     .ticker(stock.getTicker())
@@ -565,14 +571,21 @@ public class DistributionCalculationService {
                     .amountPerShare(dividend.amountPerShare())
                     .distributionType(DistributionType.REGULAR)
                     .eventStatus(status)
-                    .estimateMethod(EstimateMethod.DECLARED_AMOUNT)
-                    .estimateConfidence(EstimateConfidence.HIGH)
-                    .dataStatus(DataStatus.ACTUAL)
+                    .estimateMethod(estimateMethod)
+                    .estimateConfidence(confidence)
+                    .dataStatus(historyStatus)
                     .rawAmountPerShare(dividend.amountPerShare())
                     .provider(dividend.source())
                     .sourceUpdatedAt(Instant.now())
                     .build());
         }
+    }
+
+    private boolean isEstimatedDividendHistory(List<MarketDto.DividendEvent> dividendHistory) {
+        return dividendHistory.stream()
+                .map(MarketDto.DividendEvent::source)
+                .filter(Objects::nonNull)
+                .anyMatch(source -> source.contains("estimate"));
     }
 
     private DistributionFrequency inferFrequencyFromHistory(Stock stock, List<MarketDto.DividendEvent> dividendHistory) {

@@ -504,26 +504,44 @@ function MyPortfolioPage() {
               <h3 className="font-black text-white">보유종목</h3>
               <p className="mt-1 text-sm font-bold text-slate-500">동일 종목은 수량과 평균단가가 자동 합산됩니다.</p>
             </div>
-            <div className="hidden max-w-full overflow-x-auto lg:block">
-              <table className="w-full min-w-[1280px] border-collapse text-sm">
+            <div className="table-scroll hidden max-w-full overflow-x-auto pb-2 lg:block" tabIndex={0}>
+              <table className="w-full min-w-[1040px] border-collapse text-sm">
                 <thead className="bg-slate-950 text-left text-xs uppercase tracking-wider text-slate-500">
-                  <tr><th className="px-4 py-3">종목명</th><th>티커</th><th>구분</th><th>수량</th><th>평균단가</th><th>현재가</th><th>평가금액</th><th>손익</th><th>수익률</th><th>지급 패턴</th><th>최근 1회</th><th>최근 12개월</th><th>예상 연 분배금</th><th>다음 지급</th><th>관리</th></tr>
+                  <tr>
+                    <th className="px-4 py-3">종목</th>
+                    <th>매수 정보</th>
+                    <th>평가</th>
+                    <th>손익</th>
+                    <th>분배금</th>
+                    <th>다음 지급</th>
+                    <th className="pr-4">관리</th>
+                  </tr>
                 </thead>
                 <tbody>
                   {filteredStocks.map((stock) => {
                     const dividendInfo = dividendInfoFor(stock, distributionInfoMap) || dividendInfoFor(stock, legacyDividendInfoMap);
                     return (
                       <tr className="border-t border-slate-800 hover:bg-slate-800/70" key={stock.id}>
-                        <td className="px-4 py-3 font-black text-white">{stock.name}</td>
-                        <td>{stock.ticker}</td>
-                        <td>{isKoreanStock(stock) ? "국내" : "해외"}</td>
-                        <td>{Number(stock.quantity || 0).toLocaleString()}</td>
-                        <td>{formatMoney(stock.avgPrice, stock.currency)}</td>
-                        <td>{formatMoney(stock.currentPrice, stock.currency)}</td>
-                        <td>{formatMoney(stock.totalValue, stock.currency)}</td>
-                        <td className={Number(stock.profitLoss) >= 0 ? "font-black text-cyan-300" : "font-black text-rose-300"}>{formatMoney(stock.profitLoss, stock.currency)}</td>
-                        <td className={Number(stock.profitLossRate) >= 0 ? "font-black text-cyan-300" : "font-black text-rose-300"}>{formatPercent(stock.profitLossRate)}</td>
+                        <td className="px-4 py-3">
+                          <strong className="block max-w-[220px] truncate font-black text-white">{stock.name}</strong>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] font-black text-slate-300">{stock.ticker}</span>
+                            <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] font-black text-slate-300">{isKoreanStock(stock) ? "국내" : "해외"}</span>
+                          </div>
+                        </td>
                         <td>
+                          <strong className="block text-slate-100">{Number(stock.quantity || 0).toLocaleString()}주</strong>
+                          <span className="text-xs font-bold text-slate-500">평단 {formatMoney(stock.avgPrice, stock.currency)}</span>
+                        </td>
+                        <td>
+                          <strong className="block text-slate-100">{formatMoney(stock.totalValue, stock.currency)}</strong>
+                          <span className="text-xs font-bold text-slate-500">현재 {formatMoney(stock.currentPrice, stock.currency)}</span>
+                        </td>
+                        <td className={Number(stock.profitLoss) >= 0 ? "font-black text-cyan-300" : "font-black text-rose-300"}>
+                          <strong className="block">{formatMoney(stock.profitLoss, stock.currency)}</strong>
+                          <span className="text-xs">{formatPercent(stock.profitLossRate)}</span>
+                        </td>
+                        <td className="min-w-[220px] py-3">
                           <div className="flex flex-wrap gap-1">
                             <span className="rounded-full bg-cyan-400/10 px-2 py-1 text-xs font-black text-cyan-200">
                               {formatDividendFrequency(getDistributionFrequency(dividendInfo))}
@@ -532,17 +550,19 @@ function MyPortfolioPage() {
                             {dividendInfo?.coveredCallLike && <span className="rounded-full bg-amber-400/15 px-2 py-1 text-xs font-black text-amber-200">분배금 변동 가능</span>}
                             {dividendInfo?.specialDistributionIncluded && <span className="rounded-full bg-violet-400/15 px-2 py-1 text-xs font-black text-violet-200">특별분배 포함</span>}
                           </div>
+                          <div className="mt-2 grid gap-0.5 text-xs font-bold text-slate-400">
+                            <span>1회 {formatOptionalMoney(getLatestDistributionAmount(dividendInfo), stock.currency)}</span>
+                            <span>최근 12개월 {formatOptionalMoney(dividendInfo?.trailingTwelveMonthsAmountPerShare, stock.currency)}</span>
+                            <span>예상 연 {formatOptionalMoney(getAnnualDistributionAmount(dividendInfo), stock.currency)}</span>
+                          </div>
                         </td>
-                        <td>{formatOptionalMoney(getLatestDistributionAmount(dividendInfo), stock.currency)}</td>
-                        <td>{formatOptionalMoney(dividendInfo?.trailingTwelveMonthsAmountPerShare, stock.currency)}</td>
-                        <td>{formatOptionalMoney(getAnnualDistributionAmount(dividendInfo), stock.currency)}</td>
                         <td>
                           <div className="grid gap-1">
                             <span className="font-black text-slate-200">{formatNextPayment(dividendInfo)}</span>
                             <span className="text-xs text-slate-500">{confidenceLabels[dividendInfo?.estimateConfidence] || "신뢰도 없음"} · {volatilityLabels[dividendInfo?.distributionVolatility] || "변동성 없음"}</span>
                           </div>
                         </td>
-                        <td>
+                        <td className="pr-4">
                           <div className="flex gap-1">
                             <button className="rounded-xl bg-slate-800 px-3 py-1.5 text-xs font-black text-slate-200 hover:bg-cyan-500 hover:text-slate-950" onClick={() => openEditHolding(stock)} type="button">수정</button>
                             <button className="rounded-xl bg-slate-800 px-3 py-1.5 text-xs font-black text-slate-200 hover:bg-rose-600 hover:text-white" onClick={() => removeHolding(stock)} type="button">제거</button>

@@ -24,6 +24,7 @@ import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -137,7 +138,9 @@ public class MarketDataService {
         if ("US".equals(normalizedMarket)) {
             List<MarketDto.DividendEvent> fmp = dividendHistoryFmp(normalizedTicker);
             if (!fmp.isEmpty()) return fmp;
-            return dividendHistoryYahooFinance(normalizedTicker, "USD");
+            List<MarketDto.DividendEvent> yahoo = dividendHistoryYahooFinance(normalizedTicker, "USD");
+            if (!yahoo.isEmpty()) return yahoo;
+            return fallbackDividendHistory(normalizedMarket, normalizedTicker);
         }
 
         return List.of();
@@ -405,6 +408,99 @@ public class MarketDataService {
         } catch (Exception ignored) {
             return List.of();
         }
+    }
+
+    private List<MarketDto.DividendEvent> fallbackDividendHistory(String market, String ticker) {
+        if (!"US".equals(market)) return List.of();
+        DividendFallback fallback = fallbackDividend(ticker);
+        if (fallback == null) return List.of();
+
+        LocalDate latestPaymentDate = latestFallbackPaymentDate(fallback.intervalMonths(), fallback.baseMonth(), fallback.paymentDay());
+        int count = Math.max(1, Math.min(12, 12 / fallback.intervalMonths()));
+        List<MarketDto.DividendEvent> events = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            LocalDate paymentDate = latestPaymentDate.minusMonths((long) fallback.intervalMonths() * index);
+            events.add(new MarketDto.DividendEvent(
+                    "US",
+                    ticker,
+                    "USD",
+                    paymentDate.minusDays(7),
+                    paymentDate,
+                    fallback.amountPerShare(),
+                    fallback.source()
+            ));
+        }
+        return events;
+    }
+
+    private LocalDate latestFallbackPaymentDate(int intervalMonths, int baseMonth, int paymentDay) {
+        LocalDate today = LocalDate.now();
+        LocalDate candidate = YearMonth.from(today).atDay(Math.min(paymentDay, YearMonth.from(today).lengthOfMonth()));
+        while (candidate.isAfter(today) || Math.floorMod(candidate.getMonthValue() - baseMonth, intervalMonths) != 0) {
+            YearMonth previous = YearMonth.from(candidate.minusMonths(1));
+            candidate = previous.atDay(Math.min(paymentDay, previous.lengthOfMonth()));
+        }
+        return candidate;
+    }
+
+    private DividendFallback fallbackDividend(String ticker) {
+        return switch (ticker) {
+            case "JEPI" -> monthly("0.360000");
+            case "JEPQ" -> monthly("0.420000");
+            case "QYLD" -> monthly("0.180000");
+            case "XYLD" -> monthly("0.310000");
+            case "RYLD" -> monthly("0.170000");
+            case "DIVO" -> monthly("0.160000");
+            case "SPYI" -> monthly("0.500000");
+            case "QQQI" -> monthly("0.620000");
+            case "NVDY" -> monthly("0.950000");
+            case "TSLY" -> monthly("0.620000");
+            case "CONY" -> monthly("1.100000");
+            case "MSTY" -> monthly("1.850000");
+            case "YMAX" -> monthly("0.180000");
+            case "YMAG" -> monthly("0.160000");
+            case "FEPI" -> monthly("1.050000");
+            case "AIPI" -> monthly("1.350000");
+            case "O" -> monthly("0.270000");
+            case "TLT" -> monthly("0.310000");
+            case "IEF" -> monthly("0.250000");
+            case "SHY" -> monthly("0.290000");
+            case "BND" -> monthly("0.220000");
+            case "AGG" -> monthly("0.300000");
+            case "HYG" -> monthly("0.380000");
+            case "LQD" -> monthly("0.390000");
+            case "BIL" -> monthly("0.320000");
+            case "SGOV" -> monthly("0.430000");
+            case "USFR" -> monthly("0.230000");
+            case "SCHD" -> quarterly("0.610000");
+            case "VOO", "IVV" -> quarterly("1.780000");
+            case "SPY" -> quarterly("1.760000");
+            case "VTI" -> quarterly("0.910000");
+            case "QQQ" -> quarterly("0.750000");
+            case "QQQM" -> quarterly("0.320000");
+            case "VYM" -> quarterly("0.720000");
+            case "HDV" -> quarterly("0.850000");
+            case "DGRO" -> quarterly("0.340000");
+            case "DGRW" -> monthly("0.100000");
+            case "NOBL" -> quarterly("0.490000");
+            case "SDY" -> quarterly("0.780000");
+            case "SPLG" -> quarterly("0.220000");
+            case "VIG" -> quarterly("0.770000");
+            case "VUG" -> quarterly("0.460000");
+            case "IWM" -> quarterly("0.740000");
+            case "VNQ" -> quarterly("0.950000");
+            case "EFA" -> quarterly("0.750000");
+            case "EEM" -> quarterly("0.450000");
+            default -> null;
+        };
+    }
+
+    private DividendFallback monthly(String amount) {
+        return new DividendFallback(decimalAmount(amount), 1, 1, 15, "local-etf-dividend-estimate");
+    }
+
+    private DividendFallback quarterly(String amount) {
+        return new DividendFallback(decimalAmount(amount), 3, 3, 15, "local-etf-dividend-estimate");
     }
 
     private List<MarketDto.SearchResult> searchKrxOpenApi(String keyword) {
@@ -1172,6 +1268,7 @@ public class MarketDataService {
     }
 
     private record OpenDartCorp(String corpCode, String corpName, String stockCode) {}
+    private record DividendFallback(BigDecimal amountPerShare, int intervalMonths, int baseMonth, int paymentDay, String source) {}
     private record FinnhubSearchResponse(List<FinnhubSymbol> result) {}
     private record FinnhubSymbol(String symbol, String description, String type) {}
     private record FinnhubQuoteResponse(BigDecimal c, BigDecimal pc) {}
