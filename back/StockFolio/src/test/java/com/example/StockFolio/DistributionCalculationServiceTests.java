@@ -129,8 +129,8 @@ class DistributionCalculationServiceTests {
 
         assertThat(summary.getObservedFrequency()).isEqualTo(DistributionFrequency.QUARTERLY);
         assertThat(summary.getDataStatus()).isEqualTo(DataStatus.ESTIMATED);
-        assertThat(summary.getLatestAmountPerShare()).isGreaterThan(BigDecimal.ZERO);
-        assertThat(summary.getEstimatedAnnualGrossAmount()).isGreaterThan(BigDecimal.ZERO);
+        assertThat(summary.getLatestAmountPerShare()).isEqualByComparingTo("65.000000");
+        assertThat(summary.getEstimatedAnnualGrossAmount()).isEqualByComparingTo("2080.00");
         assertThat(summary.getProvider()).contains("local-etf-dividend-estimate");
     }
 

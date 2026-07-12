@@ -332,10 +332,51 @@ function PortfolioManagementPage() {
         </p>
       )}
 
+      <section className="grid min-w-0 gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 2xl:hidden">
+        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <label className="grid min-w-0 flex-1 gap-1 text-sm font-bold text-slate-700 dark:text-slate-200">
+            저장된 포트폴리오 선택
+            <select
+              className="form-control bg-slate-50 dark:bg-slate-800"
+              disabled={!portfolios.length}
+              value={selectedId}
+              onChange={(event) => {
+                setSelectedId(event.target.value);
+                setSavedPanelOpen(false);
+              }}
+            >
+              {!portfolios.length && <option value="">저장된 포트폴리오 없음</option>}
+              {portfolios.map((portfolio) => (
+                <option key={portfolio.id} value={portfolio.id}>
+                  {portfolio.name} · {portfolio.stockCount || 0}개 종목
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="btn-muted min-h-11 text-sm"
+            disabled={!selectedId}
+            onClick={() => setSaveMode("existing")}
+            type="button"
+          >
+            선택 포트폴리오에 추가
+          </button>
+        </div>
+        {selectedSummary && (
+          <div className="grid gap-2 text-xs font-black text-slate-500 dark:text-slate-400 sm:grid-cols-3">
+            <span className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-800">선택 {selectedSummary.name}</span>
+            <span className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-800">종목 {selectedSummary.stockCount || 0}개</span>
+            <span className={`rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-800 ${Number(selectedSummary.totalProfitLoss || 0) >= 0 ? "text-cyan-700 dark:text-cyan-300" : "text-rose-600 dark:text-rose-300"}`}>
+              수익률 {formatPercent(selectedSummary.totalProfitLossRate)}
+            </span>
+          </div>
+        )}
+      </section>
+
       <div className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
         <main className="grid min-w-0 gap-4">
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
-            <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr))]">
+            <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
               <div className="grid content-start gap-3">
                 <div className="flex min-h-11 items-center">
                   <h3 className="text-xl font-black text-slate-950 dark:text-white">1. 저장 방식</h3>
@@ -567,7 +608,7 @@ function PortfolioManagementPage() {
           />
         </main>
 
-        <aside className="order-first grid min-w-0 max-w-full content-start gap-4 2xl:order-none">
+        <aside className="hidden min-w-0 max-w-full content-start gap-4 2xl:grid">
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -706,7 +747,7 @@ function SavedPortfolioDetail({ detail, stocks, onDelete, onEditStock, onRemoveS
         )}
       </div>
 
-      <div className="mt-5 grid gap-3 md:grid-cols-4">
+      <div className="mt-5 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr))]">
         <Metric label="투자금" value={formatMoney(detail?.totalCost || 0)} />
         <Metric label="평가금액" value={formatMoney(detail?.totalValue || 0)} />
         <Metric label="평가손익" value={formatMoney(detail?.totalProfitLoss || 0)} tone={Number(detail?.totalProfitLoss || 0) >= 0 ? "positive" : "negative"} />

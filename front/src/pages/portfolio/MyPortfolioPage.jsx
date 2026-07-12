@@ -112,6 +112,10 @@ function getAnnualDistributionAmount(info) {
   return info?.estimatedAnnualGrossAmount ?? info?.totalDividend;
 }
 
+function distributionAmountLabel(info) {
+  return info?.dataStatus === "ESTIMATED" || info?.nextEventStatus === "ESTIMATED" ? "추정 1회" : "최근 1회";
+}
+
 function DarkMetric({ label, value, tone = "default" }) {
   const toneClass = tone === "positive" ? "text-cyan-700 dark:text-cyan-300" : tone === "negative" ? "text-rose-600 dark:text-rose-300" : "text-slate-950 dark:text-white";
   return (
@@ -554,7 +558,7 @@ function MyPortfolioPage() {
                             {dividendInfo?.specialDistributionIncluded && <span className="rounded-full bg-violet-400/15 px-2 py-1 text-xs font-black text-violet-200">특별분배 포함</span>}
                           </div>
                           <div className="mt-2 grid gap-0.5 text-xs font-bold text-slate-400">
-                            <span>1회 {formatOptionalMoney(getLatestDistributionAmount(dividendInfo), stock.currency)}</span>
+                            <span>{distributionAmountLabel(dividendInfo)} {formatOptionalMoney(getLatestDistributionAmount(dividendInfo), stock.currency)}</span>
                             <span>최근 12개월 {formatOptionalMoney(dividendInfo?.trailingTwelveMonthsAmountPerShare, stock.currency)}</span>
                             <span>예상 연 {formatOptionalMoney(getAnnualDistributionAmount(dividendInfo), stock.currency)}</span>
                           </div>
@@ -590,7 +594,7 @@ function MyPortfolioPage() {
                       <span>평단 {formatMoney(stock.avgPrice, stock.currency)}</span>
                       <span>현재 {formatMoney(stock.currentPrice, stock.currency)}</span>
                       <span>패턴 {formatDividendFrequency(getDistributionFrequency(dividendInfo))}</span>
-                      <span>최근 1회 {formatOptionalMoney(getLatestDistributionAmount(dividendInfo), stock.currency)}</span>
+                      <span>{distributionAmountLabel(dividendInfo)} {formatOptionalMoney(getLatestDistributionAmount(dividendInfo), stock.currency)}</span>
                       <span>최근 12개월 {formatOptionalMoney(dividendInfo?.trailingTwelveMonthsAmountPerShare, stock.currency)}</span>
                       <span>예상 연 {formatOptionalMoney(getAnnualDistributionAmount(dividendInfo), stock.currency)}</span>
                     </div>

@@ -628,7 +628,8 @@ public class DistributionCalculationService {
     }
 
     private List<MarketDto.DividendEvent> localEtfDividendEstimate(Stock stock, BigDecimal currentPrice) {
-        DistributionFrequency frequency = inferLocalEtfFrequency(stock);
+        LocalDistributionEstimate knownEstimate = knownLocalDistributionEstimate(stock);
+        DistributionFrequency frequency = knownEstimate != null ? knownEstimate.frequency() : inferLocalEtfFrequency(stock);
         int payments = paymentsPerYear(frequency);
         if (payments <= 0) return List.of();
 
@@ -637,13 +638,17 @@ public class DistributionCalculationService {
                 : stock.getCurrentPrice();
         if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) return List.of();
 
-        BigDecimal annualYield = estimatedAnnualYield(stock);
-        if (annualYield.compareTo(BigDecimal.ZERO) <= 0) return List.of();
-
-        BigDecimal amountPerShare = price
-                .multiply(annualYield)
-                .divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)
-                .divide(BigDecimal.valueOf(payments), 6, RoundingMode.HALF_UP);
+        BigDecimal amountPerShare;
+        if (knownEstimate != null) {
+            amountPerShare = knownEstimate.amountPerShare();
+        } else {
+            BigDecimal annualYield = estimatedAnnualYield(stock);
+            if (annualYield.compareTo(BigDecimal.ZERO) <= 0) return List.of();
+            amountPerShare = price
+                    .multiply(annualYield)
+                    .divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)
+                    .divide(BigDecimal.valueOf(payments), 6, RoundingMode.HALF_UP);
+        }
         if (amountPerShare.compareTo(BigDecimal.ZERO) <= 0) return List.of();
 
         int interval = switch (frequency) {
@@ -671,6 +676,18 @@ public class DistributionCalculationService {
             ));
         }
         return events;
+    }
+
+    private LocalDistributionEstimate knownLocalDistributionEstimate(Stock stock) {
+        String ticker = stock.getTicker() == null ? "" : stock.getTicker().trim().toUpperCase(Locale.ROOT);
+        return switch (ticker) {
+            case "360750" -> new LocalDistributionEstimate(new BigDecimal("65.000000"), DistributionFrequency.QUARTERLY);
+            case "360200" -> new LocalDistributionEstimate(new BigDecimal("60.000000"), DistributionFrequency.QUARTERLY);
+            case "458730" -> new LocalDistributionEstimate(new BigDecimal("35.000000"), DistributionFrequency.MONTHLY);
+            case "402970" -> new LocalDistributionEstimate(new BigDecimal("35.000000"), DistributionFrequency.MONTHLY);
+            case "305080" -> new LocalDistributionEstimate(new BigDecimal("35.000000"), DistributionFrequency.MONTHLY);
+            default -> null;
+        };
     }
 
     private LocalDate latestEstimatedPaymentDate(int intervalMonths, int baseMonth) {
@@ -1317,4 +1334,6 @@ public class DistributionCalculationService {
             return new Projection(null, null, null, DistributionEventStatus.ESTIMATED, EstimateMethod.UNAVAILABLE, EstimateConfidence.UNAVAILABLE);
         }
     }
+
+    private record LocalDistributionEstimate(BigDecimal amountPerShare, DistributionFrequency frequency) {}
 }
