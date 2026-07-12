@@ -1,6 +1,7 @@
 package com.example.StockFolio.dto;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 public class MarketDto {
 
@@ -40,5 +41,15 @@ public class MarketDto {
             BigDecimal per,
             BigDecimal pbr,
             BigDecimal dividendYield
+    ) {}
+
+    public record DividendEvent(
+            String market,
+            String ticker,
+            String currency,
+            LocalDate exDividendDate,
+            LocalDate paymentDate,
+            BigDecimal amountPerShare,
+            String source
     ) {}
 }

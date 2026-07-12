@@ -22,7 +22,9 @@ import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.time.DayOfWeek;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -125,6 +127,20 @@ public class MarketDataService {
                 quote.pbr(),
                 quote.dividendYield()
         );
+    }
+
+    public List<MarketDto.DividendEvent> dividendHistory(String market, String ticker) {
+        String normalizedMarket = normalizeMarket(market);
+        String normalizedTicker = ticker == null ? "" : ticker.trim().toUpperCase();
+        if (!hasText(normalizedTicker)) return List.of();
+
+        if ("US".equals(normalizedMarket)) {
+            List<MarketDto.DividendEvent> fmp = dividendHistoryFmp(normalizedTicker);
+            if (!fmp.isEmpty()) return fmp;
+            return dividendHistoryYahooFinance(normalizedTicker, "USD");
+        }
+
+        return List.of();
     }
 
     private List<MarketDto.SearchResult> searchExternal(String market, String keyword) {
@@ -299,6 +315,95 @@ public class MarketDataService {
             );
         } catch (Exception ignored) {
             return null;
+        }
+    }
+
+    private List<MarketDto.DividendEvent> dividendHistoryFmp(String ticker) {
+        if (!hasText(fmpApiKey)) return List.of();
+
+        List<MarketDto.DividendEvent> stable = parseFmpDividendRows(
+                safeJson(fmpBaseUrl + "/dividends?symbol={ticker}&apikey={apiKey}", ticker, fmpApiKey),
+                ticker,
+                "fmp-dividends"
+        );
+        if (!stable.isEmpty()) return stable;
+
+        String legacyBaseUrl = fmpBaseUrl.replace("/stable", "/api/v3");
+        return parseFmpDividendRows(
+                safeJson(legacyBaseUrl + "/historical-price-full/stock_dividend/{ticker}?apikey={apiKey}", ticker, fmpApiKey),
+                ticker,
+                "fmp-stock-dividend"
+        );
+    }
+
+    private List<MarketDto.DividendEvent> parseFmpDividendRows(JsonNode response, String ticker, String source) {
+        JsonNode rows = firstArrayField(response, "historical", "dividends", "data", "results");
+        if (rows == null || !rows.isArray()) return List.of();
+
+        List<MarketDto.DividendEvent> events = new ArrayList<>();
+        for (JsonNode row : rows) {
+            BigDecimal amount = decimalAmount(firstNonBlank(
+                    text(row, "adjDividend"),
+                    text(row, "dividend"),
+                    text(row, "amount")
+            ));
+            if (amount.compareTo(BigDecimal.ZERO) <= 0) continue;
+
+            LocalDate exDividendDate = parseDate(firstNonBlank(text(row, "date"), text(row, "exDividendDate")));
+            LocalDate paymentDate = parseDate(text(row, "paymentDate"));
+            if (exDividendDate == null && paymentDate == null) continue;
+
+            events.add(new MarketDto.DividendEvent(
+                    "US",
+                    ticker,
+                    "USD",
+                    exDividendDate,
+                    paymentDate,
+                    amount,
+                    source
+            ));
+        }
+        return events.stream()
+                .sorted((left, right) -> eventDate(right).compareTo(eventDate(left)))
+                .limit(48)
+                .toList();
+    }
+
+    private List<MarketDto.DividendEvent> dividendHistoryYahooFinance(String ticker, String currency) {
+        try {
+            JsonNode response = restClientBuilder.build()
+                    .get()
+                    .uri("https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=3y&interval=1mo&events=div", ticker)
+                    .header(HttpHeaders.USER_AGENT, "Mozilla/5.0")
+                    .retrieve()
+                    .body(JsonNode.class);
+            JsonNode dividends = firstArrayItem(response.path("chart").path("result"))
+                    .path("events")
+                    .path("dividends");
+            if (!dividends.isObject()) return List.of();
+
+            List<MarketDto.DividendEvent> events = new ArrayList<>();
+            dividends.fields().forEachRemaining(entry -> {
+                JsonNode row = entry.getValue();
+                BigDecimal amount = decimalAmount(text(row, "amount"));
+                LocalDate exDividendDate = epochDate(row.path("date").asLong(0));
+                if (amount.compareTo(BigDecimal.ZERO) <= 0 || exDividendDate == null) return;
+                events.add(new MarketDto.DividendEvent(
+                        "US",
+                        ticker,
+                        currency,
+                        exDividendDate,
+                        null,
+                        amount,
+                        "yahoo-finance-dividends"
+                ));
+            });
+            return events.stream()
+                    .sorted((left, right) -> eventDate(right).compareTo(eventDate(left)))
+                    .limit(48)
+                    .toList();
+        } catch (Exception ignored) {
+            return List.of();
         }
     }
 
@@ -890,6 +995,14 @@ public class MarketDataService {
         return hasText(ticker) && ticker.trim().toUpperCase().matches("\\d{5}[0-9A-Z]");
     }
 
+    private JsonNode safeJson(String uri, Object... uriVariables) {
+        try {
+            return getJson(uri, uriVariables);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
     private JsonNode getJson(String uri, Object... uriVariables) {
         return restClientBuilder.build().get().uri(uri, uriVariables).retrieve().body(JsonNode.class);
     }
@@ -949,6 +1062,32 @@ public class MarketDataService {
         } catch (Exception ignored) {
             return BigDecimal.ZERO;
         }
+    }
+
+    private BigDecimal decimalAmount(String value) {
+        try {
+            if (value == null || value.isBlank()) return BigDecimal.ZERO;
+            return new BigDecimal(value.trim().replace(",", "").replace("%", "").replace("+", "")).setScale(6, RoundingMode.HALF_UP);
+        } catch (Exception ignored) {
+            return BigDecimal.ZERO;
+        }
+    }
+
+    private LocalDate parseDate(String value) {
+        try {
+            return hasText(value) ? LocalDate.parse(value.trim()) : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private LocalDate epochDate(long epochSeconds) {
+        if (epochSeconds <= 0) return null;
+        return Instant.ofEpochSecond(epochSeconds).atZone(ZoneOffset.UTC).toLocalDate();
+    }
+
+    private LocalDate eventDate(MarketDto.DividendEvent event) {
+        return event.paymentDate() != null ? event.paymentDate() : event.exDividendDate();
     }
 
     private BigDecimal percentChange(BigDecimal current, BigDecimal previous) {

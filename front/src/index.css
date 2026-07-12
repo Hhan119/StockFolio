@@ -4,7 +4,7 @@
 :root {
   font-family: Inter, Pretendard, "Segoe UI", system-ui, sans-serif;
   color: #17202a;
-  background: #eef2f6;
+  background: #020617;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -15,10 +15,23 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  min-height: 100%;
+  background: #020617;
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+  background: #020617;
+  overflow-x: hidden;
 }
 
 button,

@@ -212,6 +212,15 @@ public class DistributionCalculationService {
 
         String key = DistributionInstrumentKeys.from(stock);
         List<DistributionEvent> events = eventRepository.findByInstrumentKey(key);
+        if (hasFreshActualDistributionData(events)) return;
+        if (hasUserEnteredDistributionData(events)) return;
+
+        List<MarketDto.DividendEvent> dividendHistory = fetchDividendHistory(stock);
+        if (!dividendHistory.isEmpty()) {
+            seedDistributionHistory(stock, dividendHistory);
+            return;
+        }
+
         if (hasTrustedDistributionData(events)) return;
 
         MarketDto.Quote quote = fetchQuote(stock);
@@ -490,6 +499,100 @@ public class DistributionCalculationService {
                 .anyMatch(event -> event.getDataStatus() == DataStatus.ACTUAL
                         || ACTUAL_STATUSES.contains(event.getEventStatus())
                         || (event.getDataStatus() == DataStatus.USER_ENTERED && !isLegacyDividend(event)));
+    }
+
+    private boolean hasFreshActualDistributionData(List<DistributionEvent> events) {
+        LocalDate threshold = LocalDate.now().minusDays(45);
+        return events.stream()
+                .filter(event -> event.getDataStatus() == DataStatus.ACTUAL || ACTUAL_STATUSES.contains(event.getEventStatus()))
+                .map(this::eventDate)
+                .filter(Objects::nonNull)
+                .anyMatch(date -> !date.isBefore(threshold));
+    }
+
+    private boolean hasUserEnteredDistributionData(List<DistributionEvent> events) {
+        return events.stream()
+                .anyMatch(event -> event.getDataStatus() == DataStatus.USER_ENTERED && !isLegacyDividend(event));
+    }
+
+    private List<MarketDto.DividendEvent> fetchDividendHistory(Stock stock) {
+        try {
+            return marketDataService.dividendHistory(inferMarket(stock), stock.getTicker());
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
+
+    private void seedDistributionHistory(Stock stock, List<MarketDto.DividendEvent> dividendHistory) {
+        DistributionFrequency frequency = inferFrequencyFromHistory(stock, dividendHistory);
+        String source = dividendHistory.stream()
+                .map(MarketDto.DividendEvent::source)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse("market-dividend-history");
+        DistributionProfile profile = ensureProfile(stock, frequency, DataStatus.ACTUAL, source);
+        LocalDate latestDate = dividendHistory.stream()
+                .map(this::marketDividendDate)
+                .filter(Objects::nonNull)
+                .max(LocalDate::compareTo)
+                .orElse(null);
+        profile.setLastDistributionDate(latestDate);
+        profile.setPaymentsLast12Months((int) dividendHistory.stream()
+                .map(this::marketDividendDate)
+                .filter(Objects::nonNull)
+                .filter(date -> !date.isBefore(LocalDate.now().minusMonths(12)))
+                .count());
+        profile.setFrequencyConfidence(profile.getPaymentsLast12Months() >= 3 ? EstimateConfidence.HIGH : EstimateConfidence.MEDIUM);
+        profile.setDataStatus(DataStatus.ACTUAL);
+        profile.setSource(source);
+        profile.setSourceUpdatedAt(Instant.now());
+        profileRepository.save(profile);
+
+        for (MarketDto.DividendEvent dividend : dividendHistory) {
+            LocalDate eventDate = marketDividendDate(dividend);
+            if (eventDate == null || dividend.amountPerShare() == null || dividend.amountPerShare().compareTo(BigDecimal.ZERO) <= 0) continue;
+            DistributionEventStatus status = eventDate.isAfter(LocalDate.now())
+                    ? DistributionEventStatus.DECLARED
+                    : DistributionEventStatus.PAID;
+            saveIfAbsent(DistributionEvent.builder()
+                    .instrumentKey(profile.getInstrumentKey())
+                    .ticker(stock.getTicker())
+                    .instrumentName(stock.getName())
+                    .market(inferMarket(stock))
+                    .currency(normalizeCurrency(dividend.currency() != null ? dividend.currency() : stock.getCurrency()))
+                    .exDividendDate(dividend.exDividendDate())
+                    .paymentDate(dividend.paymentDate())
+                    .amountPerShare(dividend.amountPerShare())
+                    .distributionType(DistributionType.REGULAR)
+                    .eventStatus(status)
+                    .estimateMethod(EstimateMethod.DECLARED_AMOUNT)
+                    .estimateConfidence(EstimateConfidence.HIGH)
+                    .dataStatus(DataStatus.ACTUAL)
+                    .rawAmountPerShare(dividend.amountPerShare())
+                    .provider(dividend.source())
+                    .sourceUpdatedAt(Instant.now())
+                    .build());
+        }
+    }
+
+    private DistributionFrequency inferFrequencyFromHistory(Stock stock, List<MarketDto.DividendEvent> dividendHistory) {
+        DistributionFrequency inferred = inferFrequencyFromName(stock.getTicker(), stock.getName());
+        if (inferred != DistributionFrequency.UNKNOWN) return inferred;
+
+        long recentPayments = dividendHistory.stream()
+                .map(this::marketDividendDate)
+                .filter(Objects::nonNull)
+                .filter(date -> !date.isBefore(LocalDate.now().minusMonths(12)))
+                .count();
+        if (recentPayments >= 10) return DistributionFrequency.MONTHLY;
+        if (recentPayments >= 3) return DistributionFrequency.QUARTERLY;
+        if (recentPayments == 2) return DistributionFrequency.SEMIANNUAL;
+        if (recentPayments == 1) return DistributionFrequency.ANNUAL;
+        return dividendHistory.size() >= 10 ? DistributionFrequency.MONTHLY : DistributionFrequency.UNKNOWN;
+    }
+
+    private LocalDate marketDividendDate(MarketDto.DividendEvent dividend) {
+        return dividend.paymentDate() != null ? dividend.paymentDate() : dividend.exDividendDate();
     }
 
     private MarketDto.Quote fetchQuote(Stock stock) {

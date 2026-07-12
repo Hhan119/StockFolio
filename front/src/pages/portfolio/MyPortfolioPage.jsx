@@ -366,7 +366,7 @@ function MyPortfolioPage() {
   }, [editingStock]);
 
   return (
-    <section className="max-w-full overflow-hidden rounded-2xl bg-slate-950 p-3 text-slate-100 ring-1 ring-slate-800/80 sm:p-4 lg:p-5">
+    <section className="w-full min-w-0 max-w-full overflow-hidden rounded-2xl bg-slate-950 p-3 text-slate-100 ring-1 ring-slate-800/80 sm:p-4 lg:p-5">
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="mb-1 text-xs font-black uppercase tracking-wider text-cyan-300">내 포트폴리오</p>
