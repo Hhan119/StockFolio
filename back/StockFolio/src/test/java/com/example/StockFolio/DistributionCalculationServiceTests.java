@@ -118,6 +118,22 @@ class DistributionCalculationServiceTests {
         assertThat(summary.getProvider()).contains("local-etf-dividend-estimate");
     }
 
+    @Test
+    void estimatesKoreanBroadMarketEtfDistributionsWhenMarketHistoryIsMissing() {
+        Stock stock = saveHolding("360750", "TIGER 미국S&P500", 8, "KRW");
+        stock.setCurrentPrice(new BigDecimal("20000"));
+        stockRepository.save(stock);
+
+        DistributionDto.HoldingDistributionSummaryResponse summary =
+                distributionCalculationService.getHoldingSummary(stock.getId(), stock.getPortfolio().getUser().getId(), false);
+
+        assertThat(summary.getObservedFrequency()).isEqualTo(DistributionFrequency.QUARTERLY);
+        assertThat(summary.getDataStatus()).isEqualTo(DataStatus.ESTIMATED);
+        assertThat(summary.getLatestAmountPerShare()).isGreaterThan(BigDecimal.ZERO);
+        assertThat(summary.getEstimatedAnnualGrossAmount()).isGreaterThan(BigDecimal.ZERO);
+        assertThat(summary.getProvider()).contains("local-etf-dividend-estimate");
+    }
+
     private Stock saveHolding(String ticker, String name, int quantity, String currency) {
         User user = userRepository.save(User.builder()
                 .username("user-" + ticker + "-" + System.nanoTime())

@@ -695,6 +695,9 @@ public class DistributionCalculationService {
         if (text.contains("배당") || text.contains("DIVIDEND") || text.contains("리츠") || text.contains("REIT")) {
             return "KR".equals(inferMarket(stock)) ? DistributionFrequency.MONTHLY : DistributionFrequency.QUARTERLY;
         }
+        if (isBroadMarketEtfLike(stock)) {
+            return DistributionFrequency.QUARTERLY;
+        }
         return DistributionFrequency.UNKNOWN;
     }
 
@@ -705,6 +708,7 @@ public class DistributionCalculationService {
         if (text.contains("리츠") || text.contains("REIT")) return new BigDecimal("4.00");
         if (text.contains("채권") || text.contains("BOND") || text.contains("국고") || text.contains("회사채")) return new BigDecimal("3.50");
         if (text.contains("배당") || text.contains("DIVIDEND")) return new BigDecimal("3.00");
+        if (isBroadMarketEtfLike(stock)) return new BigDecimal("1.20");
         return BigDecimal.ZERO;
     }
 
@@ -718,6 +722,23 @@ public class DistributionCalculationService {
                 || text.contains("커버드콜")
                 || text.contains("DIVIDEND")
                 || text.contains("REIT");
+    }
+
+    private boolean isBroadMarketEtfLike(Stock stock) {
+        String text = instrumentText(stock);
+        if (!isEtfLike(stock) || isNonDistributionEtfLike(stock)) return false;
+        return text.contains("S&P500")
+                || text.contains("S&P 500")
+                || text.contains("SP500")
+                || text.contains("NASDAQ")
+                || text.contains("나스닥")
+                || text.contains("다우")
+                || text.contains("DOW")
+                || text.contains("WORLD")
+                || text.contains("글로벌")
+                || text.contains("선진국")
+                || text.contains("미국")
+                || text.contains("MSCI");
     }
 
     private boolean isNonDistributionEtfLike(Stock stock) {

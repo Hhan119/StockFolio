@@ -311,12 +311,12 @@ function PortfolioManagementPage() {
 
   return (
     <section className="grid w-full min-w-0 max-w-full gap-4">
-      <header className="rounded-2xl bg-slate-950 p-6 text-white shadow-sm lg:p-8">
+      <header className="rounded-2xl bg-slate-950 p-4 text-white shadow-sm sm:p-5 lg:p-6">
         <p className="text-xs font-black uppercase tracking-wider text-cyan-300">Portfolio Builder</p>
-        <div className="mt-2 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <h2 className="max-w-4xl text-3xl font-black leading-tight lg:text-5xl">내 포트폴리오</h2>
-            <p className="mt-4 max-w-3xl text-sm font-semibold leading-7 text-slate-300">
+        <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <h2 className="max-w-4xl text-2xl font-black leading-tight sm:text-3xl lg:text-4xl">내 포트폴리오</h2>
+            <p className="mt-3 max-w-3xl text-sm font-semibold leading-6 text-slate-300">
               종목을 먼저 담고, 그 묶음을 하나의 포트폴리오로 저장하세요. 저장된 포트폴리오는 오른쪽에서 선택해 다시 볼 수 있습니다.
             </p>
           </div>
@@ -335,7 +335,7 @@ function PortfolioManagementPage() {
       <div className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
         <main className="grid min-w-0 gap-4">
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
-            <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+            <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr))]">
               <div className="grid content-start gap-3">
                 <div className="flex min-h-11 items-center">
                   <h3 className="text-xl font-black text-slate-950 dark:text-white">1. 저장 방식</h3>
@@ -394,7 +394,7 @@ function PortfolioManagementPage() {
                     </select>
                   </label>
                 )}
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,130px),1fr))]">
                   <Metric label="투자금" value={formatMoney(draftSummary.totalCost)} />
                   <Metric label="평가금액" value={formatMoney(draftSummary.totalValue)} />
                   <Metric label="예상손익" value={formatMoney(draftSummary.profit)} tone={draftSummary.profit >= 0 ? "positive" : "negative"} />
@@ -490,7 +490,7 @@ function PortfolioManagementPage() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Draft Holdings</p>
@@ -567,7 +567,7 @@ function PortfolioManagementPage() {
           />
         </main>
 
-        <aside className="grid min-w-0 max-w-full content-start gap-4">
+        <aside className="order-first grid min-w-0 max-w-full content-start gap-4 2xl:order-none">
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -613,7 +613,7 @@ function PortfolioManagementPage() {
                 </div>
               </button>
             )}
-            <div className={`${savedPanelOpen ? "grid" : "hidden"} mt-4 max-h-[620px] gap-2 overflow-y-auto pr-1`}>
+            <div className={`${savedPanelOpen ? "grid" : "hidden"} mt-4 gap-2 overflow-visible pr-0 sm:grid-cols-2 xl:grid-cols-3 2xl:max-h-[620px] 2xl:grid-cols-1 2xl:overflow-y-auto 2xl:pr-1`}>
               {portfolios.map((portfolio) => {
                 const active = String(portfolio.id) === String(selectedId);
                 const profit = Number(portfolio.totalProfitLoss || 0);

@@ -152,6 +152,7 @@ function MyPortfolioPage() {
   const totalProfit = Number(detail?.totalProfitLoss || 0);
   const totalReturn = Number(detail?.totalProfitLossRate || 0);
   const estimatedAnnualDividend = Number(distributionSummary?.estimatedAnnualGrossAmount ?? dividendSummary?.annualEstimated ?? 0);
+  const filteredTotalValue = filteredStocks.reduce((sum, stock) => sum + Number(stock.totalValue || 0), 0);
   const pieStyle = useMemo(() => ({ background: buildPie(filteredStocks) }), [filteredStocks]);
   const topHoldings = [...filteredStocks].sort((a, b) => Number(b.totalValue || 0) - Number(a.totalValue || 0)).slice(0, 5);
   const legacyDividendInfoMap = useMemo(() => buildDividendInfoMap(dividendSummary), [dividendSummary]);
@@ -398,23 +399,23 @@ function MyPortfolioPage() {
         </div>
       </div>
 
-      <section className="mb-4 max-w-full overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900 shadow-sm">
-        <div className="grid min-w-0 gap-0 2xl:grid-cols-[minmax(0,1fr)_380px]">
-          <div className="grid gap-4 p-4 sm:p-5">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div>
+      <section className="mb-4 max-w-full rounded-2xl border border-slate-700/80 bg-slate-900 p-3 shadow-sm sm:p-4">
+        <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+          <div className="grid min-w-0 gap-3">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0">
                 <p className="text-xs font-black uppercase tracking-wider text-slate-500">Total Asset</p>
-                <strong className="mt-1 block text-3xl font-black text-white sm:text-4xl">{formatMoney(totalValue)}</strong>
+                <strong className="mt-1 block truncate text-3xl font-black text-white sm:text-4xl">{formatMoney(totalValue)}</strong>
                 <p className={`mt-1 text-sm font-black ${totalProfit >= 0 ? "text-cyan-300" : "text-rose-300"}`}>{formatMoney(totalProfit)} ({formatPercent(totalReturn)})</p>
               </div>
-              <div className="grid w-full grid-cols-3 rounded-2xl bg-slate-950 p-1 text-sm font-black sm:w-auto">
+              <div className="grid w-full grid-cols-3 rounded-2xl bg-slate-950 p-1 text-sm font-black md:w-auto">
                 {[["ALL", "전체"], ["KR", "국내"], ["US", "해외"]].map(([value, label]) => (
-                  <button key={value} className={`rounded-2xl px-3 py-2 ${marketFilter === value ? "bg-cyan-500 text-slate-950" : "text-slate-400"}`} onClick={() => setMarketFilter(value)} type="button">{label}</button>
+                  <button key={value} className={`rounded-2xl px-3 py-2 transition ${marketFilter === value ? "bg-cyan-500 text-slate-950" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`} onClick={() => setMarketFilter(value)} type="button">{label}</button>
                 ))}
               </div>
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))]">
               <DarkMetric label="투자금" value={formatMoney(totalCost)} />
               <DarkMetric label="평가손익" value={formatMoney(totalProfit)} tone={totalProfit >= 0 ? "positive" : "negative"} />
               <DarkMetric label="연 배당" value={formatMoney(estimatedAnnualDividend)} tone="positive" />
@@ -422,27 +423,29 @@ function MyPortfolioPage() {
             </div>
           </div>
 
-          <aside className="min-w-0 border-t border-slate-700/80 bg-slate-950 p-4 2xl:border-l 2xl:border-t-0">
-            <div className="mx-auto grid h-44 w-44 place-items-center rounded-full shadow-sm sm:h-52 sm:w-52" style={pieStyle}>
-              <div className="grid h-24 w-24 place-items-center rounded-full bg-slate-950 text-center ring-1 ring-slate-800 sm:h-28 sm:w-28">
-                <span className="text-xs font-black text-slate-500">종목 수</span>
-                <strong className="text-xl font-black text-white">{filteredStocks.length}</strong>
+          <aside className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950/80 p-3">
+            <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="grid h-28 w-28 shrink-0 place-items-center rounded-full shadow-sm sm:h-32 sm:w-32" style={pieStyle}>
+                <div className="grid h-16 w-16 place-items-center rounded-full bg-slate-950 text-center ring-1 ring-slate-800 sm:h-20 sm:w-20">
+                  <span className="text-[10px] font-black text-slate-500">종목</span>
+                  <strong className="text-lg font-black text-white">{filteredStocks.length}</strong>
+                </div>
               </div>
-            </div>
-            <div className="mt-4 grid gap-2">
-              {topHoldings.map((stock, index) => {
-                const ratio = totalValue > 0 ? (Number(stock.totalValue || 0) / totalValue) * 100 : 0;
-                return (
-                  <div className="flex items-center justify-between gap-3 text-sm font-bold" key={stock.id}>
-                    <span className="flex min-w-0 items-center gap-2">
-                      <i className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }} />
-                      <span className="truncate text-slate-300">{stock.name}</span>
-                    </span>
-                    <span className="text-white">{ratio.toFixed(1)}%</span>
-                  </div>
-                );
-              })}
-              {!topHoldings.length && <p className="text-sm font-bold text-slate-500">보유종목을 등록하면 비중이 표시됩니다.</p>}
+              <div className="grid min-w-0 flex-1 gap-2">
+                {topHoldings.map((stock, index) => {
+                  const ratio = filteredTotalValue > 0 ? (Number(stock.totalValue || 0) / filteredTotalValue) * 100 : 0;
+                  return (
+                    <div className="flex items-center justify-between gap-3 text-sm font-bold" key={stock.id}>
+                      <span className="flex min-w-0 items-center gap-2">
+                        <i className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }} />
+                        <span className="truncate text-slate-300">{stock.name}</span>
+                      </span>
+                      <span className="shrink-0 text-white">{ratio.toFixed(1)}%</span>
+                    </div>
+                  );
+                })}
+                {!topHoldings.length && <p className="text-sm font-bold text-slate-500">보유종목을 등록하면 비중이 표시됩니다.</p>}
+              </div>
             </div>
           </aside>
         </div>
@@ -603,17 +606,6 @@ function MyPortfolioPage() {
                   </article>
                 );
               })}
-              {!filteredStocks.length && <p className="rounded-2xl bg-slate-950 p-4 text-sm font-bold text-slate-500">해당 구분의 보유종목이 없습니다.</p>}
-            </div>
-            <div className="hidden">
-              {filteredStocks.map((stock) => (
-                <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3" key={stock.id}>
-                  <div className="flex justify-between gap-3"><strong>{stock.name}</strong><span className={Number(stock.profitLossRate) >= 0 ? "font-black text-cyan-300" : "font-black text-rose-300"}>{formatPercent(stock.profitLossRate)}</span></div>
-                  <p className="mt-1 text-sm font-bold text-slate-500">{stock.ticker}</p>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-sm"><span>수량 {stock.quantity}</span><span>평가 {formatMoney(stock.totalValue, stock.currency)}</span><span>평균 {formatMoney(stock.avgPrice, stock.currency)}</span><span>현재 {formatMoney(stock.currentPrice, stock.currency)}</span></div>
-                  <button className="mt-3 w-full rounded-xl bg-slate-800 px-3 py-2 text-sm font-black text-slate-200 hover:bg-rose-600 hover:text-white" onClick={() => removeHolding(stock)} type="button">보유종목 제거</button>
-                </article>
-              ))}
               {!filteredStocks.length && <p className="rounded-2xl bg-slate-950 p-4 text-sm font-bold text-slate-500">해당 구분의 보유종목이 없습니다.</p>}
             </div>
           </section>
