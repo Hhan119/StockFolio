@@ -14,3 +14,8 @@ export const formatMoney = (value, currency = "KRW") => {
 };
 
 export const formatPercent = (value) => `${Number(value || 0).toFixed(2)}%`;
+
+export const formatExpenseRatio = (value) => `${Number(value || 0).toLocaleString("ko-KR", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 4,
+})}%`;

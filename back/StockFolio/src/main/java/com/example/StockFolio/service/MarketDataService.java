@@ -30,9 +30,11 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipInputStream;
@@ -43,6 +45,8 @@ public class MarketDataService {
 
     private static final DateTimeFormatter KRX_DATE_FORMAT = DateTimeFormatter.BASIC_ISO_DATE;
     private static final Duration TOP_ETF_CACHE_TTL = Duration.ofHours(24);
+    private static final Duration ETF_UNIVERSE_CACHE_TTL = Duration.ofHours(24);
+    private static final Duration INSTRUMENT_CACHE_TTL = Duration.ofMinutes(15);
 
     private final ObjectMapper objectMapper;
     private final RestClient.Builder restClientBuilder;
@@ -83,6 +87,8 @@ public class MarketDataService {
     private String kisAccessToken;
     private volatile Map<String, OpenDartCorp> openDartCorpCache = Map.of();
     private final Map<String, CachedTopEtfs> topEtfCache = new ConcurrentHashMap<>();
+    private final Map<String, CachedEtfUniverse> etfUniverseCache = new ConcurrentHashMap<>();
+    private final Map<String, CachedInstrumentSnapshot> instrumentSnapshotCache = new ConcurrentHashMap<>();
 
     public List<MarketDto.SearchResult> search(String market, String keyword) {
         String normalizedMarket = normalizeMarket(market);
@@ -138,6 +144,78 @@ public class MarketDataService {
         return enriched;
     }
 
+    public List<MarketDto.EtfSearchResult> searchEtfs(String market, String keyword, int limit) {
+        String normalizedMarket = normalizeTopMarket(market);
+        String normalizedKeyword = keyword == null ? "" : keyword.trim();
+        int size = Math.max(1, Math.min(limit, 100));
+        List<MarketDto.EtfSearchResult> results = new ArrayList<>();
+
+        if ("ALL".equals(normalizedMarket) || "KR".equals(normalizedMarket)) {
+            results.addAll(searchKoreanEtfs(normalizedKeyword, size));
+        }
+        if ("ALL".equals(normalizedMarket) || "US".equals(normalizedMarket)) {
+            results.addAll(searchUsEtfs(normalizedKeyword, size));
+        }
+
+        Map<String, MarketDto.EtfSearchResult> deduped = new LinkedHashMap<>();
+        results.forEach(item -> deduped.putIfAbsent(item.market() + ":" + item.ticker(), item));
+        return deduped.values().stream()
+                .sorted(Comparator
+                        .comparing((MarketDto.EtfSearchResult item) -> exactEtfMatch(item, normalizedKeyword) ? 0 : 1)
+                        .thenComparing(MarketDto.EtfSearchResult::market)
+                        .thenComparing(MarketDto.EtfSearchResult::name))
+                .limit(size)
+                .toList();
+    }
+
+    public MarketDto.InstrumentSnapshot instrumentSnapshot(String market, String ticker) {
+        String normalizedMarket = "AUTO".equalsIgnoreCase(market) ? inferMarket(ticker) : normalizeMarket(market);
+        String normalizedTicker = ticker == null ? "" : ticker.trim().toUpperCase();
+        String cacheKey = normalizedMarket + ":" + normalizedTicker;
+        CachedInstrumentSnapshot cached = instrumentSnapshotCache.get(cacheKey);
+        if (cached != null && Duration.between(cached.cachedAt(), Instant.now()).compareTo(INSTRUMENT_CACHE_TTL) < 0) {
+            return cached.snapshot();
+        }
+
+        MarketDto.Quote quote = quote(normalizedMarket, normalizedTicker);
+        MarketDto.EtfProfile etfProfile = "KR".equals(normalizedMarket)
+                ? koreanEtfProfile(normalizedTicker, quote)
+                : fmpEtfProfile(normalizedTicker, quote);
+        boolean etf = etfProfile != null || isEtfTicker(normalizedMarket, normalizedTicker);
+        if (etf && etfProfile == null) etfProfile = fallbackEtfProfile(normalizedMarket, normalizedTicker, quote);
+
+        List<MarketDto.DividendEvent> dividends = dividendHistory(normalizedMarket, normalizedTicker);
+        List<MarketDto.EtfHolding> holdings = etf
+                ? ("KR".equals(normalizedMarket) ? koreanEtfHoldings(normalizedTicker) : fmpEtfHoldings(normalizedTicker))
+                : List.of();
+        List<MarketDto.FinancialPeriod> financials = etf
+                ? List.of()
+                : ("KR".equals(normalizedMarket) ? openDartFinancials(normalizedTicker) : fmpFinancials(normalizedTicker));
+
+        Set<String> sources = new LinkedHashSet<>();
+        if (quote != null && hasText(quote.source())) sources.add(quote.source());
+        if (etfProfile != null && hasText(etfProfile.source())) sources.add(etfProfile.source());
+        holdings.stream().map(MarketDto.EtfHolding::source).filter(this::hasText).forEach(sources::add);
+        dividends.stream().map(MarketDto.DividendEvent::source).filter(this::hasText).forEach(sources::add);
+        financials.stream().map(MarketDto.FinancialPeriod::source).filter(this::hasText).forEach(sources::add);
+
+        MarketDto.InstrumentSnapshot snapshot = new MarketDto.InstrumentSnapshot(
+                normalizedMarket,
+                normalizedTicker,
+                firstNonBlank(etfProfile != null ? etfProfile.name() : "", quote != null ? quote.name() : "", normalizedTicker),
+                etf,
+                quote,
+                etfProfile,
+                holdings,
+                dividends,
+                financials,
+                Instant.now(),
+                List.copyOf(sources)
+        );
+        instrumentSnapshotCache.put(cacheKey, new CachedInstrumentSnapshot(Instant.now(), snapshot));
+        return snapshot;
+    }
+
     public MarketDto.StockDetail detail(String ticker) {
         MarketDto.Quote quote = quote(inferMarket(ticker), ticker);
         return new MarketDto.StockDetail(
@@ -161,11 +239,17 @@ public class MarketDataService {
         if ("US".equals(normalizedMarket)) {
             List<MarketDto.DividendEvent> fmp = dividendHistoryFmp(normalizedTicker);
             if (!fmp.isEmpty()) return fmp;
-            List<MarketDto.DividendEvent> yahoo = dividendHistoryYahooFinance(normalizedTicker, "USD");
+            List<MarketDto.DividendEvent> yahoo = dividendHistoryYahooFinance(normalizedTicker, normalizedTicker, "US", "USD");
             if (!yahoo.isEmpty()) return yahoo;
             return fallbackDividendHistory(normalizedMarket, normalizedTicker);
         }
 
+        List<MarketDto.DividendEvent> naverEtf = dividendHistoryNaverEtf(normalizedTicker);
+        if (!naverEtf.isEmpty()) return naverEtf;
+        for (String yahooTicker : List.of(normalizedTicker + ".KS", normalizedTicker + ".KQ")) {
+            List<MarketDto.DividendEvent> yahoo = dividendHistoryYahooFinance(yahooTicker, normalizedTicker, "KR", "KRW");
+            if (!yahoo.isEmpty()) return yahoo;
+        }
         return List.of();
     }
 
@@ -210,7 +294,6 @@ public class MarketDataService {
     private List<MarketDto.SearchResult> enrichSearchPrices(List<MarketDto.SearchResult> results) {
         return results.stream()
                 .map(this::enrichSearchPrice)
-                .map(this::withFallbackSearchPrice)
                 .toList();
     }
 
@@ -234,28 +317,6 @@ public class MarketDataService {
         } catch (Exception ignored) {
             return result;
         }
-    }
-
-    private MarketDto.SearchResult withFallbackSearchPrice(MarketDto.SearchResult result) {
-        if (result == null || result.currentPrice() == null || result.currentPrice().compareTo(BigDecimal.ZERO) > 0) {
-            return result;
-        }
-
-        BigDecimal fallbackPrice = fallbackSearchPrice(result);
-        if (fallbackPrice.compareTo(BigDecimal.ZERO) <= 0) {
-            return result;
-        }
-
-        return new MarketDto.SearchResult(
-                result.market(),
-                result.ticker(),
-                result.name(),
-                result.currency(),
-                result.exchange(),
-                fallbackPrice,
-                result.dividendAvailable(),
-                firstNonBlank(result.source(), "fallback") + "+local-price-fallback"
-        );
     }
 
     private List<MarketDto.SearchResult> fallbackTopEtfs(String market, int limit) {
@@ -284,26 +345,6 @@ public class MarketDataService {
         );
         int index = order.indexOf(item.ticker().toUpperCase());
         return index >= 0 ? index : 999;
-    }
-
-    private BigDecimal fallbackSearchPrice(MarketDto.SearchResult result) {
-        if (!"KR".equals(result.market())) return BigDecimal.ZERO;
-        String name = result.name() == null ? "" : result.name();
-        String upperName = name.toUpperCase();
-        if (name.contains("삼성전자") && name.contains("레버리지")) return BigDecimal.valueOf(10000);
-        if (name.contains("삼성전자") && name.contains("채권혼합")) return BigDecimal.valueOf(10000);
-        if (name.contains("하이닉스") && name.contains("채권혼합")) return BigDecimal.valueOf(10000);
-        if (name.contains("커버드콜")) return BigDecimal.valueOf(10000);
-        if (name.contains("채권혼합")) return BigDecimal.valueOf(10000);
-        if (name.contains("레버리지") || name.contains("인버스")) return BigDecimal.valueOf(5000);
-        if (List.of("KODEX", "TIGER", "RISE", "ACE", "SOL", "PLUS", "KBSTAR", "KOSEF", "HANARO", "TIMEFOLIO", "WON")
-                .stream()
-                .anyMatch(upperName::contains)
-                || upperName.contains("ETF")
-                || upperName.contains("ETN")) {
-            return BigDecimal.valueOf(10000);
-        }
-        return BigDecimal.ZERO;
     }
 
     private MarketDto.Quote quoteExternal(String market, String ticker) {
@@ -356,6 +397,214 @@ public class MarketDataService {
         } catch (Exception ignored) {
             return List.of();
         }
+    }
+
+    private List<MarketDto.EtfSearchResult> searchKoreanEtfs(String keyword, int limit) {
+        Map<String, MarketDto.EtfSearchResult> merged = new LinkedHashMap<>();
+        if (hasText(krxApiKey)) {
+            try {
+                for (JsonNode row : fetchKrxRows("/etp/etf_bydd_trd")) {
+                    String ticker = firstNonBlank(text(row, "ISU_SRT_CD"), text(row, "ISU_CD")).toUpperCase();
+                    String name = firstNonBlank(text(row, "ISU_ABBRV"), text(row, "ISU_NM"), ticker);
+                    if (!matchesEtfKeyword(ticker, name, keyword)) continue;
+                    merged.put(ticker, new MarketDto.EtfSearchResult(
+                            "KR", ticker, name, "KRW", "KRX ETF",
+                            decimal(text(row, "TDD_CLSPRC")), decimal(text(row, "FLUC_RT")),
+                            decimal(text(row, "NAV")), decimal(text(row, "MKTCAP")),
+                            false, "krx-openapi-etf"
+                    ));
+                }
+            } catch (Exception ignored) {
+                // Naver ETF universe below remains available when KRX is unavailable.
+            }
+        }
+
+        for (MarketDto.EtfSearchResult naver : naverEtfUniverse()) {
+            if (!matchesEtfKeyword(naver.ticker(), naver.name(), keyword)) continue;
+            merged.merge(naver.ticker(), naver, this::mergeEtfSearchResult);
+        }
+
+        if (merged.isEmpty()) {
+            fallbackUniverse().stream()
+                    .filter(item -> "KR".equals(item.market()) && isEtfLike(item))
+                    .filter(item -> matchesEtfKeyword(item.ticker(), item.name(), keyword))
+                    .map(this::toEtfSearchResult)
+                    .forEach(item -> merged.putIfAbsent(item.ticker(), item));
+        }
+        return merged.values().stream().limit(limit).toList();
+    }
+
+    private List<MarketDto.EtfSearchResult> searchUsEtfs(String keyword, int limit) {
+        List<MarketDto.EtfSearchResult> universe = hasText(fmpApiKey)
+                ? fmpEtfUniverse()
+                : List.of();
+        List<MarketDto.EtfSearchResult> matched = universe.stream()
+                .filter(item -> matchesEtfKeyword(item.ticker(), item.name(), keyword))
+                .limit(limit)
+                .map(this::enrichUsEtfSearchPrice)
+                .toList();
+        if (!matched.isEmpty()) return matched;
+
+        List<MarketDto.EtfSearchResult> yahoo = searchYahooEtfs(keyword, limit);
+        if (!yahoo.isEmpty()) return yahoo;
+
+        return fallbackUniverse().stream()
+                .filter(item -> "US".equals(item.market()) && isEtfLike(item))
+                .filter(item -> matchesEtfKeyword(item.ticker(), item.name(), keyword))
+                .limit(limit)
+                .map(this::toEtfSearchResult)
+                .toList();
+    }
+
+    private List<MarketDto.EtfSearchResult> naverEtfUniverse() {
+        return cachedEtfUniverse("KR:NAVER", () -> {
+            try {
+                JsonNode rows = getNaverJson("https://finance.naver.com/api/sise/etfItemList.nhn")
+                        .path("result")
+                        .path("etfItemList");
+                if (!rows.isArray()) return List.of();
+                List<MarketDto.EtfSearchResult> result = new ArrayList<>();
+                for (JsonNode row : rows) {
+                    String ticker = text(row, "itemcode").toUpperCase();
+                    String name = firstNonBlank(text(row, "itemname"), ticker);
+                    if (!hasText(ticker) || !hasText(name)) continue;
+                    BigDecimal aum = decimal(text(row, "marketSum"));
+                    if (aum.compareTo(BigDecimal.ZERO) > 0) aum = aum.multiply(BigDecimal.valueOf(100_000_000L));
+                    result.add(new MarketDto.EtfSearchResult(
+                            "KR", ticker, name, "KRW", "KRX ETF",
+                            decimal(text(row, "nowVal")),
+                            decimal(firstNonBlank(text(row, "changeRate"), text(row, "fluctuationRate"))),
+                            decimal(text(row, "nav")), aum, false, "naver-etf-list"
+                    ));
+                }
+                return result;
+            } catch (Exception ignored) {
+                return List.of();
+            }
+        });
+    }
+
+    private List<MarketDto.EtfSearchResult> fmpEtfUniverse() {
+        return cachedEtfUniverse("US:FMP", () -> {
+            if (!hasText(fmpApiKey)) return List.of();
+            try {
+                JsonNode rows = getJson(fmpBaseUrl + "/etf-list?apikey={apiKey}", fmpApiKey);
+                if (!rows.isArray()) return List.of();
+                List<MarketDto.EtfSearchResult> result = new ArrayList<>();
+                for (JsonNode row : rows) {
+                    String ticker = text(row, "symbol").toUpperCase();
+                    if (!hasText(ticker) || ticker.contains(".")) continue;
+                    String name = firstNonBlank(text(row, "name"), ticker);
+                    String exchange = firstNonBlank(text(row, "exchangeShortName"), text(row, "exchange"), "US");
+                    result.add(new MarketDto.EtfSearchResult(
+                            "US", ticker, name, firstNonBlank(text(row, "currency"), "USD"), exchange,
+                            decimal(firstNonBlank(text(row, "price"), text(row, "currentPrice"))),
+                            decimal(firstNonBlank(text(row, "changesPercentage"), text(row, "changeRate"))),
+                            BigDecimal.ZERO, BigDecimal.ZERO, false, "fmp-etf-list"
+                    ));
+                }
+                return result;
+            } catch (Exception ignored) {
+                return List.of();
+            }
+        });
+    }
+
+    private List<MarketDto.EtfSearchResult> searchYahooEtfs(String keyword, int limit) {
+        if (!hasText(keyword)) return List.of();
+        try {
+            JsonNode response = restClientBuilder.build()
+                    .get()
+                    .uri("https://query2.finance.yahoo.com/v1/finance/search?q={keyword}&quotesCount=50&newsCount=0", keyword)
+                    .header(HttpHeaders.USER_AGENT, "Mozilla/5.0")
+                    .retrieve()
+                    .body(JsonNode.class);
+            JsonNode rows = response.path("quotes");
+            if (!rows.isArray()) return List.of();
+
+            List<MarketDto.EtfSearchResult> result = new ArrayList<>();
+            for (JsonNode row : rows) {
+                if (result.size() >= limit) break;
+                String type = firstNonBlank(text(row, "quoteType"), text(row, "typeDisp")).toUpperCase();
+                if (!List.of("ETF", "MUTUALFUND").contains(type)) continue;
+                String ticker = text(row, "symbol").toUpperCase();
+                if (!hasText(ticker) || ticker.contains(".")) continue;
+                MarketDto.Quote quote = quoteYahooFinance(ticker);
+                result.add(new MarketDto.EtfSearchResult(
+                        "US", ticker,
+                        firstNonBlank(text(row, "longname"), text(row, "shortname"), ticker),
+                        quote != null ? quote.currency() : firstNonBlank(text(row, "currency"), "USD"),
+                        firstNonBlank(text(row, "exchDisp"), text(row, "exchange"), "US"),
+                        quote != null ? quote.currentPrice() : BigDecimal.ZERO,
+                        quote != null ? quote.changeRate() : BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, false, "yahoo-finance-etf-search"
+                ));
+            }
+            return result;
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
+
+    private MarketDto.EtfSearchResult enrichUsEtfSearchPrice(MarketDto.EtfSearchResult item) {
+        if (item.currentPrice() != null && item.currentPrice().compareTo(BigDecimal.ZERO) > 0) return item;
+        MarketDto.Quote quote = quoteFmpSearch(item.ticker());
+        if (!isUsableQuote(quote)) quote = quoteYahooFinance(item.ticker());
+        if (!isUsableQuote(quote)) return item;
+        return new MarketDto.EtfSearchResult(
+                item.market(), item.ticker(), firstNonBlank(item.name(), quote.name()),
+                firstNonBlank(item.currency(), quote.currency(), "USD"), item.exchange(),
+                quote.currentPrice(), quote.changeRate(), item.nav(), item.aum(),
+                item.dividendAvailable(), quote.source()
+        );
+    }
+
+    private MarketDto.Quote quoteFmpSearch(String ticker) {
+        if (!hasText(fmpApiKey)) return null;
+        try {
+            JsonNode row = firstArrayItem(getJson(fmpBaseUrl + "/quote?symbol={ticker}&apikey={apiKey}", ticker, fmpApiKey));
+            if (row == null) return null;
+            BigDecimal current = decimal(firstNonBlank(text(row, "price"), text(row, "currentPrice")));
+            BigDecimal previous = decimal(firstNonBlank(text(row, "previousClose"), text(row, "previousClosePrice")));
+            if (previous.compareTo(BigDecimal.ZERO) <= 0) previous = current;
+            return new MarketDto.Quote(
+                    "US", ticker, firstNonBlank(text(row, "name"), ticker), firstNonBlank(text(row, "currency"), "USD"),
+                    current, previous, decimal(text(row, "changesPercentage")),
+                    compactCurrency(decimal(text(row, "marketCap")), firstNonBlank(text(row, "currency"), "USD")),
+                    decimal(text(row, "pe")), BigDecimal.ZERO, BigDecimal.ZERO, "fmp"
+            );
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private List<MarketDto.EtfSearchResult> cachedEtfUniverse(String key, EtfUniverseLoader loader) {
+        CachedEtfUniverse cached = etfUniverseCache.get(key);
+        if (cached != null && Duration.between(cached.cachedAt(), Instant.now()).compareTo(ETF_UNIVERSE_CACHE_TTL) < 0) {
+            return cached.items();
+        }
+        List<MarketDto.EtfSearchResult> items = loader.load();
+        if (!items.isEmpty()) etfUniverseCache.put(key, new CachedEtfUniverse(Instant.now(), items));
+        return items;
+    }
+
+    private MarketDto.EtfSearchResult mergeEtfSearchResult(MarketDto.EtfSearchResult primary, MarketDto.EtfSearchResult secondary) {
+        return new MarketDto.EtfSearchResult(
+                primary.market(), primary.ticker(), firstNonBlank(primary.name(), secondary.name()),
+                firstNonBlank(primary.currency(), secondary.currency()), firstNonBlank(primary.exchange(), secondary.exchange()),
+                positiveOr(primary.currentPrice(), secondary.currentPrice()),
+                nonZeroOr(primary.changeRate(), secondary.changeRate()),
+                positiveOr(primary.nav(), secondary.nav()), positiveOr(primary.aum(), secondary.aum()),
+                Boolean.TRUE.equals(primary.dividendAvailable()) || Boolean.TRUE.equals(secondary.dividendAvailable()),
+                firstNonBlank(primary.source(), secondary.source())
+        );
+    }
+
+    private MarketDto.EtfSearchResult toEtfSearchResult(MarketDto.SearchResult item) {
+        return new MarketDto.EtfSearchResult(
+                item.market(), item.ticker(), item.name(), item.currency(), item.exchange(), item.currentPrice(),
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, item.dividendAvailable(), item.source()
+        );
     }
 
     private MarketDto.Quote quoteFmp(String ticker) {
@@ -447,11 +696,16 @@ public class MarketDataService {
                 .toList();
     }
 
-    private List<MarketDto.DividendEvent> dividendHistoryYahooFinance(String ticker, String currency) {
+    private List<MarketDto.DividendEvent> dividendHistoryYahooFinance(
+            String requestTicker,
+            String outputTicker,
+            String market,
+            String currency
+    ) {
         try {
             JsonNode response = restClientBuilder.build()
                     .get()
-                    .uri("https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=3y&interval=1mo&events=div", ticker)
+                    .uri("https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=3y&interval=1mo&events=div", requestTicker)
                     .header(HttpHeaders.USER_AGENT, "Mozilla/5.0")
                     .retrieve()
                     .body(JsonNode.class);
@@ -467,8 +721,8 @@ public class MarketDataService {
                 LocalDate exDividendDate = epochDate(row.path("date").asLong(0));
                 if (amount.compareTo(BigDecimal.ZERO) <= 0 || exDividendDate == null) return;
                 events.add(new MarketDto.DividendEvent(
-                        "US",
-                        ticker,
+                        market,
+                        outputTicker,
                         currency,
                         exDividendDate,
                         null,
@@ -483,6 +737,251 @@ public class MarketDataService {
         } catch (Exception ignored) {
             return List.of();
         }
+    }
+
+    private MarketDto.EtfProfile koreanEtfProfile(String ticker, MarketDto.Quote quote) {
+        MarketDto.EtfSearchResult row = naverEtfUniverse().stream()
+                .filter(item -> item.ticker().equalsIgnoreCase(ticker))
+                .findFirst()
+                .orElse(null);
+        if (row == null && hasText(krxApiKey)) {
+            row = searchKoreanEtfs(ticker, 5).stream()
+                    .filter(item -> item.ticker().equalsIgnoreCase(ticker))
+                    .findFirst()
+                    .orElse(null);
+        }
+        if (row == null) return null;
+
+        JsonNode base = safeNaverStockJson("https://stock.naver.com/api/domestic/detail/{ticker}/ETFBase", ticker);
+        JsonNode dividend = safeNaverStockJson("https://stock.naver.com/api/domestic/detail/{ticker}/ETFDividend", ticker);
+        JsonNode componentSample = safeNaverStockJson(
+                "https://stock.naver.com/api/domestic/detail/{ticker}/ETFComponent?startIdx=0&pageSize=1",
+                ticker
+        );
+        String name = firstNonBlank(text(base, "itemName"), row.name(), quote != null ? quote.name() : "", ticker);
+        BigDecimal aum = nullablePositive(decimal(text(base, "totalNetAssets")));
+        if (aum == null) aum = nullablePositive(row.aum());
+        return new MarketDto.EtfProfile(
+                "KR", ticker, name, "KRW", row.exchange(),
+                firstNonBlank(text(base, "issueName"), inferKoreanEtfProvider(name)),
+                firstNonBlank(text(base, "etfType"), inferEtfAssetClass(name)),
+                firstNonBlank(text(base, "etfBaseIdx"), inferEtfIndexName(name)),
+                firstNonBlank(stripHtml(text(base, "etfDesc")), koreanEtfDescription(name)),
+                basicDate(text(base, "listedDate")),
+                nullablePositive(decimal(firstNonBlank(text(base, "nav"), row.nav() == null ? "" : row.nav().toPlainString()))),
+                aum,
+                normalizeRatio(decimalAmount(text(base, "fundPay"))),
+                nullableNonZero(decimal(text(base, "performanceMarketMonth"))),
+                nullableNonZero(decimal(text(base, "performanceMarket3Month"))),
+                nullableNonZero(decimal(text(base, "performanceMarketYear"))),
+                nullableNonZero(decimal(text(base, "performanceMarket3Year"))),
+                nullableNonZero(decimal(text(base, "performanceMarket5Year"))),
+                nullablePositive(decimal(text(dividend, "dividendYieldTtm"))),
+                nullablePositive(decimalAmount(text(dividend, "dividendPerShareTtm"))),
+                integerOrNull(text(firstArrayItem(componentSample), "componentCount")),
+                base == null ? row.source() : "naver-stock-etf-base"
+        );
+    }
+
+    private MarketDto.EtfProfile fmpEtfProfile(String ticker, MarketDto.Quote quote) {
+        if (!hasText(fmpApiKey)) return null;
+        try {
+            JsonNode row = firstArrayItem(getJson(fmpBaseUrl + "/etf/info?symbol={ticker}&apikey={apiKey}", ticker, fmpApiKey));
+            if (row == null) return null;
+            String name = firstNonBlank(text(row, "name"), text(row, "fundName"), quote != null ? quote.name() : "", ticker);
+            return new MarketDto.EtfProfile(
+                    "US", ticker, name,
+                    firstNonBlank(text(row, "currency"), quote != null ? quote.currency() : "", "USD"),
+                    firstNonBlank(text(row, "exchange"), text(row, "exchangeShortName"), "US"),
+                    firstNonBlank(text(row, "fundFamily"), text(row, "issuer"), inferUsEtfProvider(name)),
+                    firstNonBlank(text(row, "assetClass"), text(row, "category"), inferEtfAssetClass(name)),
+                    firstNonBlank(text(row, "indexName"), text(row, "benchmark")),
+                    firstNonBlank(text(row, "description"), text(row, "investmentStrategy")),
+                    firstNonBlank(text(row, "inceptionDate"), text(row, "ipoDate")),
+                    nullablePositive(decimal(firstNonBlank(text(row, "nav"), text(row, "netAssetValue")))),
+                    nullablePositive(decimal(firstNonBlank(text(row, "aum"), text(row, "assetsUnderManagement"), text(row, "totalAssets")))),
+                    normalizeRatio(decimalAmount(firstNonBlank(text(row, "expenseRatio"), text(row, "netExpenseRatio")))),
+                    nullableNonZero(decimal(firstNonBlank(text(row, "return1M"), text(row, "returnOneMonth")))),
+                    nullableNonZero(decimal(firstNonBlank(text(row, "return3M"), text(row, "returnThreeMonth")))),
+                    nullableNonZero(decimal(firstNonBlank(text(row, "return1Y"), text(row, "returnOneYear")))),
+                    nullableNonZero(decimal(firstNonBlank(text(row, "return3Y"), text(row, "returnThreeYear")))),
+                    nullableNonZero(decimal(firstNonBlank(text(row, "return5Y"), text(row, "returnFiveYear")))),
+                    nullablePositive(decimal(firstNonBlank(text(row, "dividendYield"), text(row, "yield")))),
+                    nullablePositive(decimalAmount(firstNonBlank(text(row, "lastDividend"), text(row, "dividendPerShare")))),
+                    integerOrNull(firstNonBlank(text(row, "holdingsCount"), text(row, "numberOfHoldings"))),
+                    "fmp-etf-info"
+            );
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private MarketDto.EtfProfile fallbackEtfProfile(String market, String ticker, MarketDto.Quote quote) {
+        String name = firstNonBlank(quote != null ? quote.name() : "", displayName(ticker), ticker);
+        return new MarketDto.EtfProfile(
+                market, ticker, name, "KR".equals(market) ? "KRW" : "USD",
+                "KR".equals(market) ? "KRX ETF" : "US ETF",
+                "KR".equals(market) ? inferKoreanEtfProvider(name) : inferUsEtfProvider(name),
+                inferEtfAssetClass(name), inferEtfIndexName(name), "", "",
+                null, null, null, null, null, null, null, null, null, null, null,
+                quote != null ? quote.source() + "+profile-unavailable" : "profile-unavailable"
+        );
+    }
+
+    private List<MarketDto.EtfHolding> fmpEtfHoldings(String ticker) {
+        if (!hasText(fmpApiKey)) return List.of();
+        try {
+            JsonNode rows = getJson(fmpBaseUrl + "/etf/holdings?symbol={ticker}&apikey={apiKey}", ticker, fmpApiKey);
+            if (!rows.isArray()) return List.of();
+            List<MarketDto.EtfHolding> holdings = new ArrayList<>();
+            for (JsonNode row : rows) {
+                String holdingTicker = firstNonBlank(text(row, "asset"), text(row, "symbol"), text(row, "ticker"));
+                String name = firstNonBlank(text(row, "name"), text(row, "assetName"), holdingTicker, "기타 자산");
+                holdings.add(new MarketDto.EtfHolding(
+                        holdingTicker, name,
+                        nullablePositive(decimal(firstNonBlank(text(row, "weightPercentage"), text(row, "weight"), text(row, "weighting")))),
+                        nullablePositive(decimal(firstNonBlank(text(row, "sharesNumber"), text(row, "shares")))),
+                        nullablePositive(decimal(text(row, "marketValue"))),
+                        "fmp-etf-holdings"
+                ));
+            }
+            return holdings.stream()
+                    .sorted(Comparator.comparing((MarketDto.EtfHolding item) -> item.weight() == null ? BigDecimal.ZERO : item.weight()).reversed())
+                    .limit(100)
+                    .toList();
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
+
+    private List<MarketDto.EtfHolding> koreanEtfHoldings(String ticker) {
+        JsonNode rows = safeNaverStockJson(
+                "https://stock.naver.com/api/domestic/detail/{ticker}/ETFComponent?startIdx=0&pageSize=100",
+                ticker
+        );
+        if (rows != null && rows.isArray() && !rows.isEmpty()) {
+            List<MarketDto.EtfHolding> holdings = new ArrayList<>();
+            for (JsonNode row : rows) {
+                String componentTicker = normalizeNaverComponentTicker(firstNonBlank(
+                        text(row, "componentItemCode"), text(row, "componentReutersCode"), text(row, "componentIsinCode")
+                ));
+                holdings.add(new MarketDto.EtfHolding(
+                        componentTicker,
+                        firstNonBlank(text(row, "componentName"), componentTicker, "기타 자산"),
+                        nullablePositive(decimal(text(row, "weight"))),
+                        nullablePositive(decimal(text(row, "cuUnitQuantity"))),
+                        nullablePositive(decimal(text(row, "evalAmount"))),
+                        "naver-stock-etf-components"
+                ));
+            }
+            return holdings.stream()
+                    .sorted(Comparator.comparing((MarketDto.EtfHolding item) -> item.weight() == null ? BigDecimal.ZERO : item.weight()).reversed())
+                    .limit(100)
+                    .toList();
+        }
+
+        try {
+            String json = runPython("etf_holdings", "KR", ticker);
+            List<MarketDto.EtfHolding> holdings = objectMapper.readValue(json, new TypeReference<>() {});
+            return holdings == null ? List.of() : holdings.stream().limit(100).toList();
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
+
+    private List<MarketDto.DividendEvent> dividendHistoryNaverEtf(String ticker) {
+        JsonNode rows = safeNaverStockJson(
+                "https://stock.naver.com/api/domestic/detail/{ticker}/ETFDividendHist?startIdx=0&pageSize=48",
+                ticker
+        );
+        if (rows == null || !rows.isArray()) return List.of();
+
+        List<MarketDto.DividendEvent> events = new ArrayList<>();
+        for (JsonNode row : rows) {
+            BigDecimal amount = nullablePositive(decimalAmount(text(row, "dividendAmount")));
+            LocalDate exDividendDate = parseDate(text(row.path("id"), "exDividendAt"));
+            if (amount == null || exDividendDate == null) continue;
+            events.add(new MarketDto.DividendEvent(
+                    "KR", ticker, "KRW", exDividendDate, null, amount, "naver-stock-etf-dividends"
+            ));
+        }
+        return events.stream()
+                .sorted((left, right) -> eventDate(right).compareTo(eventDate(left)))
+                .limit(48)
+                .toList();
+    }
+
+    private List<MarketDto.FinancialPeriod> fmpFinancials(String ticker) {
+        if (!hasText(fmpApiKey)) return List.of();
+        JsonNode income = safeJson(fmpBaseUrl + "/income-statement?symbol={ticker}&period=annual&limit=4&apikey={apiKey}", ticker, fmpApiKey);
+        JsonNode balance = safeJson(fmpBaseUrl + "/balance-sheet-statement?symbol={ticker}&period=annual&limit=4&apikey={apiKey}", ticker, fmpApiKey);
+        JsonNode cashFlow = safeJson(fmpBaseUrl + "/cash-flow-statement?symbol={ticker}&period=annual&limit=4&apikey={apiKey}", ticker, fmpApiKey);
+        if (income == null || !income.isArray()) return List.of();
+
+        List<MarketDto.FinancialPeriod> periods = new ArrayList<>();
+        for (JsonNode row : income) {
+            String fiscalYear = firstNonBlank(text(row, "fiscalYear"), yearFromDate(text(row, "date")));
+            JsonNode balanceRow = findFinancialRow(balance, fiscalYear);
+            JsonNode cashRow = findFinancialRow(cashFlow, fiscalYear);
+            periods.add(new MarketDto.FinancialPeriod(
+                    fiscalYear,
+                    firstNonBlank(text(row, "period"), "FY"),
+                    firstNonBlank(text(row, "reportedCurrency"), "USD"),
+                    nullableNumber(row, "revenue"),
+                    nullableNumber(row, "operatingIncome"),
+                    nullableNumber(row, "netIncome"),
+                    nullableNumber(balanceRow, "totalAssets"),
+                    nullableNumber(balanceRow, "totalLiabilities"),
+                    nullableNumber(balanceRow, "totalStockholdersEquity", "totalEquity"),
+                    nullableNumber(cashRow, "operatingCashFlow", "netCashProvidedByOperatingActivities"),
+                    "fmp-financial-statements"
+            ));
+        }
+        return periods.stream().limit(4).toList();
+    }
+
+    private List<MarketDto.FinancialPeriod> openDartFinancials(String ticker) {
+        OpenDartCorp corp = findOpenDartCorp(ticker);
+        if (corp == null || !hasText(openDartApiKey)) return List.of();
+
+        List<MarketDto.FinancialPeriod> periods = new ArrayList<>();
+        int latestYear = LocalDate.now().getYear() - 1;
+        for (int year = latestYear; year >= latestYear - 3; year--) {
+            JsonNode response = openDartStatement(corp.corpCode(), year, "CFS");
+            JsonNode rows = response == null ? null : response.path("list");
+            if (rows == null || !rows.isArray() || rows.isEmpty()) {
+                response = openDartStatement(corp.corpCode(), year, "OFS");
+                rows = response == null ? null : response.path("list");
+            }
+            if (rows == null || !rows.isArray() || rows.isEmpty()) continue;
+            periods.add(new MarketDto.FinancialPeriod(
+                    String.valueOf(year), "FY", "KRW",
+                    dartAccountAmount(rows, "매출액", "영업수익", "수익(매출액)"),
+                    dartAccountAmount(rows, "영업이익", "영업이익(손실)"),
+                    dartAccountAmount(rows, "당기순이익", "당기순이익(손실)", "연결당기순이익"),
+                    dartAccountAmount(rows, "자산총계"),
+                    dartAccountAmount(rows, "부채총계"),
+                    dartAccountAmount(rows, "자본총계"),
+                    dartAccountAmount(rows, "영업활동현금흐름", "영업활동으로 인한 현금흐름"),
+                    "opendart-financial-statements"
+            ));
+        }
+        return periods;
+    }
+
+    private JsonNode openDartStatement(String corpCode, int year, String financialStatementDivision) {
+        return safeJson(
+                openDartBaseUrl + "/fnlttSinglAcntAll.json?crtfc_key={apiKey}&corp_code={corpCode}&bsns_year={year}&reprt_code=11011&fs_div={fsDiv}",
+                openDartApiKey, corpCode, year, financialStatementDivision
+        );
+    }
+
+    private boolean isEtfTicker(String market, String ticker) {
+        if ("KR".equals(market)) {
+            return naverEtfUniverse().stream().anyMatch(item -> item.ticker().equalsIgnoreCase(ticker));
+        }
+        if (fmpEtfUniverse().stream().anyMatch(item -> item.ticker().equalsIgnoreCase(ticker))) return true;
+        return searchYahooEtfs(ticker, 10).stream().anyMatch(item -> item.ticker().equalsIgnoreCase(ticker));
     }
 
     private List<MarketDto.DividendEvent> fallbackDividendHistory(String market, String ticker) {
@@ -635,18 +1134,27 @@ public class MarketDataService {
     }
 
     private List<JsonNode> fetchKrxRows(String path) {
-        JsonNode response = restClientBuilder.build()
-                .get()
-                .uri(krxBaseUrl + path + "?basDd={baseDate}", latestKrxBusinessDate())
-                .header("AUTH_KEY", krxApiKey)
-                .retrieve()
-                .body(JsonNode.class);
-        JsonNode rows = firstArrayField(response, "OutBlock_1", "output", "list");
-        if (rows == null) return List.of();
-
-        List<JsonNode> result = new ArrayList<>();
-        rows.forEach(result::add);
-        return result;
+        LocalDate date = latestKrxBusinessDay();
+        for (int attempt = 0; attempt < 8; attempt++) {
+            if (date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY) {
+                date = date.minusDays(1);
+                continue;
+            }
+            JsonNode response = restClientBuilder.build()
+                    .get()
+                    .uri(krxBaseUrl + path + "?basDd={baseDate}", date.format(KRX_DATE_FORMAT))
+                    .header("AUTH_KEY", krxApiKey)
+                    .retrieve()
+                    .body(JsonNode.class);
+            JsonNode rows = firstArrayField(response, "OutBlock_1", "output", "list");
+            if (rows != null && rows.isArray() && !rows.isEmpty()) {
+                List<JsonNode> result = new ArrayList<>();
+                rows.forEach(result::add);
+                return result;
+            }
+            date = date.minusDays(1);
+        }
+        return List.of();
     }
 
     private MarketDto.SearchResult toKrxSearchResult(JsonNode row, String keyword, boolean etf) {
@@ -1024,6 +1532,22 @@ public class MarketDataService {
         return objectMapper.readTree(body);
     }
 
+    private JsonNode safeNaverStockJson(String uri, Object... uriVariables) {
+        try {
+            String body = restClientBuilder.build()
+                    .get()
+                    .uri(uri, uriVariables)
+                    .header(HttpHeaders.USER_AGENT, "Mozilla/5.0")
+                    .header(HttpHeaders.REFERER, "https://stock.naver.com/")
+                    .header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE + ", text/plain, */*")
+                    .retrieve()
+                    .body(String.class);
+            return hasText(body) ? objectMapper.readTree(body) : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
     private String kisToken() {
         if (kisAccessToken != null && !kisAccessToken.isBlank()) return kisAccessToken;
 
@@ -1063,7 +1587,10 @@ public class MarketDataService {
                 .filter(item -> item.ticker().toLowerCase().contains(lower)
                         || item.name().toLowerCase().contains(lower)
                         || (!alias.isBlank() && item.name().toLowerCase().contains(alias)))
-                .map(this::freshenKrSearchResult)
+                .map(item -> new MarketDto.SearchResult(
+                        item.market(), item.ticker(), item.name(), item.currency(), item.exchange(),
+                        BigDecimal.ZERO, item.dividendAvailable(), "fallback-no-live-price"
+                ))
                 .limit(30)
                 .toList();
     }
@@ -1077,7 +1604,7 @@ public class MarketDataService {
                 .filter(item -> item.market().equals(market))
                 .filter(item -> item.ticker().equalsIgnoreCase(ticker))
                 .findFirst()
-                .map(item -> new MarketDto.Quote(item.market(), item.ticker(), item.name(), item.currency(), item.currentPrice(), item.currentPrice(), BigDecimal.ZERO, defaultMarketCap(item.ticker()), defaultPer(item.ticker()), defaultPbr(item.ticker()), defaultDividendYield(item.ticker()), "fallback"))
+                .map(item -> new MarketDto.Quote(item.market(), item.ticker(), item.name(), item.currency(), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, "-", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, "fallback-no-live-price"))
                 .orElse(new MarketDto.Quote(market, ticker, ticker, "KR".equals(market) ? "KRW" : "USD", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, "-", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, "fallback"));
     }
 
@@ -1307,12 +1834,161 @@ public class MarketDataService {
         return ticker.toLowerCase().contains(normalized) || name.toLowerCase().contains(normalized);
     }
 
-    private String latestKrxBusinessDate() {
+    private boolean matchesEtfKeyword(String ticker, String name, String keyword) {
+        if (!hasText(keyword)) return true;
+        String normalized = keyword.trim().toLowerCase();
+        return ticker.toLowerCase().contains(normalized) || name.toLowerCase().contains(normalized);
+    }
+
+    private boolean exactEtfMatch(MarketDto.EtfSearchResult item, String keyword) {
+        if (!hasText(keyword)) return false;
+        return item.ticker().equalsIgnoreCase(keyword.trim()) || item.name().equalsIgnoreCase(keyword.trim());
+    }
+
+    private LocalDate latestKrxBusinessDay() {
         LocalDate date = LocalDate.now();
         while (date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY) {
             date = date.minusDays(1);
         }
-        return date.format(KRX_DATE_FORMAT);
+        return date;
+    }
+
+    private BigDecimal positiveOr(BigDecimal primary, BigDecimal secondary) {
+        if (primary != null && primary.compareTo(BigDecimal.ZERO) > 0) return primary;
+        return secondary == null ? BigDecimal.ZERO : secondary;
+    }
+
+    private BigDecimal nonZeroOr(BigDecimal primary, BigDecimal secondary) {
+        if (primary != null && primary.compareTo(BigDecimal.ZERO) != 0) return primary;
+        return secondary == null ? BigDecimal.ZERO : secondary;
+    }
+
+    private BigDecimal nullablePositive(BigDecimal value) {
+        return value != null && value.compareTo(BigDecimal.ZERO) > 0 ? value : null;
+    }
+
+    private BigDecimal nullableNonZero(BigDecimal value) {
+        return value != null && value.compareTo(BigDecimal.ZERO) != 0 ? value : null;
+    }
+
+    private BigDecimal normalizeRatio(BigDecimal value) {
+        return nullablePositive(value);
+    }
+
+    private String normalizeNaverComponentTicker(String value) {
+        if (!hasText(value)) return "-";
+        String normalized = value.trim().toUpperCase();
+        return normalized.replaceFirst("\\.(O|N|K|KS|KQ)$", "");
+    }
+
+    private String stripHtml(String value) {
+        if (!hasText(value)) return "";
+        return value.replaceAll("<[^>]+>", " ")
+                .replace("&nbsp;", " ")
+                .replace("&amp;", "&")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    private String basicDate(String value) {
+        try {
+            return hasText(value)
+                    ? LocalDate.parse(value.trim(), DateTimeFormatter.BASIC_ISO_DATE).toString()
+                    : "";
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private Integer integerOrNull(String value) {
+        try {
+            return hasText(value) ? Integer.valueOf(value.replace(",", "").trim()) : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String inferKoreanEtfProvider(String name) {
+        String upper = name == null ? "" : name.toUpperCase();
+        if (upper.contains("KODEX")) return "삼성자산운용";
+        if (upper.contains("TIGER")) return "미래에셋자산운용";
+        if (upper.contains("RISE") || upper.contains("KBSTAR")) return "KB자산운용";
+        if (upper.contains("ACE")) return "한국투자신탁운용";
+        if (upper.contains("SOL")) return "신한자산운용";
+        if (upper.contains("PLUS")) return "한화자산운용";
+        if (upper.contains("KOSEF")) return "키움투자자산운용";
+        if (upper.contains("HANARO")) return "NH-Amundi자산운용";
+        if (upper.contains("TIMEFOLIO")) return "타임폴리오자산운용";
+        return "운용사 정보 없음";
+    }
+
+    private String inferUsEtfProvider(String name) {
+        String upper = name == null ? "" : name.toUpperCase();
+        if (upper.contains("ISHARES")) return "BlackRock";
+        if (upper.contains("VANGUARD")) return "Vanguard";
+        if (upper.contains("SPDR")) return "State Street";
+        if (upper.contains("INVESCO")) return "Invesco";
+        if (upper.contains("SCHWAB")) return "Charles Schwab";
+        if (upper.contains("JPMORGAN")) return "J.P. Morgan";
+        if (upper.contains("GLOBAL X")) return "Global X";
+        if (upper.contains("PROSHARES")) return "ProShares";
+        if (upper.contains("DIREXION")) return "Direxion";
+        return "Provider unavailable";
+    }
+
+    private String inferEtfAssetClass(String name) {
+        String upper = name == null ? "" : name.toUpperCase();
+        if (List.of("채권", "국채", "BOND", "TREASURY", "FIXED INCOME", "KOFR").stream().anyMatch(upper::contains)) return "채권";
+        if (List.of("리츠", "REIT", "REAL ESTATE").stream().anyMatch(upper::contains)) return "리츠/부동산";
+        if (List.of("원유", "금", "은", "COMMODITY", "GOLD", "SILVER", "OIL").stream().anyMatch(upper::contains)) return "원자재";
+        return "주식";
+    }
+
+    private String inferEtfIndexName(String name) {
+        String upper = name == null ? "" : name.toUpperCase();
+        if (upper.contains("S&P500") || upper.contains("S&P 500")) return "S&P 500 계열";
+        if (upper.contains("나스닥100") || upper.contains("NASDAQ 100")) return "NASDAQ 100 계열";
+        if (upper.contains("다우존스") || upper.contains("DOW JONES")) return "Dow Jones 계열";
+        if (upper.contains("KOSPI200") || upper.contains("KOSPI 200") || upper.matches(".*\\b200\\b.*")) return "KOSPI 200 계열";
+        return "추종 지수 정보 없음";
+    }
+
+    private String koreanEtfDescription(String name) {
+        return name + "의 최근 거래 가격과 공시 가능한 상품 정보를 제공합니다. 구성종목과 분배금은 공급자 기준일에 따라 달라질 수 있습니다.";
+    }
+
+    private JsonNode findFinancialRow(JsonNode rows, String fiscalYear) {
+        if (rows == null || !rows.isArray()) return null;
+        for (JsonNode row : rows) {
+            String year = firstNonBlank(text(row, "fiscalYear"), yearFromDate(text(row, "date")));
+            if (year.equals(fiscalYear)) return row;
+        }
+        return null;
+    }
+
+    private String yearFromDate(String date) {
+        return hasText(date) && date.length() >= 4 ? date.substring(0, 4) : "";
+    }
+
+    private BigDecimal nullableNumber(JsonNode row, String... fields) {
+        if (row == null) return null;
+        for (String field : fields) {
+            String value = text(row, field);
+            if (hasText(value)) return decimal(value);
+        }
+        return null;
+    }
+
+    private BigDecimal dartAccountAmount(JsonNode rows, String... accountNames) {
+        if (rows == null || !rows.isArray()) return null;
+        for (String accountName : accountNames) {
+            for (JsonNode row : rows) {
+                if (!accountName.equals(text(row, "account_nm"))) continue;
+                String amount = firstNonBlank(text(row, "thstrm_amount"), text(row, "thstrm_add_amount"));
+                if (hasText(amount) && !"-".equals(amount)) return decimal(amount);
+            }
+        }
+        return null;
     }
 
     private BigDecimal decimal(String value) {
@@ -1433,8 +2109,15 @@ public class MarketDataService {
 
     private record OpenDartCorp(String corpCode, String corpName, String stockCode) {}
     private record CachedTopEtfs(Instant cachedAt, List<MarketDto.SearchResult> items) {}
+    private record CachedEtfUniverse(Instant cachedAt, List<MarketDto.EtfSearchResult> items) {}
+    private record CachedInstrumentSnapshot(Instant cachedAt, MarketDto.InstrumentSnapshot snapshot) {}
     private record DividendFallback(BigDecimal amountPerShare, int intervalMonths, int baseMonth, int paymentDay, String source) {}
     private record FinnhubSearchResponse(List<FinnhubSymbol> result) {}
     private record FinnhubSymbol(String symbol, String description, String type) {}
     private record FinnhubQuoteResponse(BigDecimal c, BigDecimal pc) {}
+
+    @FunctionalInterface
+    private interface EtfUniverseLoader {
+        List<MarketDto.EtfSearchResult> load();
+    }
 }

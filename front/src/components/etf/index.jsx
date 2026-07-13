@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { formatMoney, formatPercent } from "../../utils/format.js";
+import { formatExpenseRatio, formatMoney, formatPercent } from "../../utils/format.js";
 import { formatNullable, getPerformanceTone, NA } from "../../utils/etfCalculations.js";
 
 export function EmptyState({ title = "데이터가 없습니다", description = "조건을 바꾸거나 잠시 후 다시 시도해주세요." }) {
@@ -248,7 +248,7 @@ export function EtfResultCard({ etf, keyword = "", onToggleCompare, onToggleWatc
       <div className="mt-4 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
         <EtfMetricMini label="현재가" value={formatNullable(etf.quote.currentPrice, (value) => formatMoney(value, etf.currency))} />
         <EtfMetricMini label="최근 12개월 분배율" value={formatNullable(etf.distribution.ttmDistributionRate, formatPercent)} />
-        <EtfMetricMini label="총보수" value={formatNullable(etf.cost.expenseRatio, formatPercent)} />
+        <EtfMetricMini label="총보수" value={formatNullable(etf.cost.expenseRatio, formatExpenseRatio)} />
         <EtfMetricMini label="1년 총수익률" value={performanceLabel} tone={tone} />
       </div>
       <DataFreshnessBadge metadata={etf.metadata} />
@@ -298,7 +298,7 @@ export function EtfResultTable({ items, keyword = "", onToggleCompare, compareIt
                 <td className="max-w-xs p-4 font-semibold leading-6 text-slate-600 dark:text-slate-300">{etf.beginnerDescription}</td>
                 <td className="p-4 font-black">{formatNullable(etf.distribution.ttmDistributionRate, formatPercent)}</td>
                 <td className="p-4 font-bold">{etf.distribution.frequency}</td>
-                <td className="p-4 font-black">{formatNullable(etf.cost.expenseRatio, formatPercent)}</td>
+                <td className="p-4 font-black">{formatNullable(etf.cost.expenseRatio, formatExpenseRatio)}</td>
                 <td className={`p-4 font-black ${getPerformanceTone(oneYear) === "positive" ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"}`}>
                   {formatNullable(oneYear, (value) => `${value > 0 ? "▲ +" : value < 0 ? "▼ " : ""}${formatPercent(value)}`)}
                 </td>
@@ -348,7 +348,7 @@ export function EtfCompareTable({ etfs }) {
     ["투자 전략", (etf) => etf.strategy],
     ["분배 주기", (etf) => etf.distribution.frequency],
     ["최근 12개월 분배율", (etf) => formatNullable(etf.distribution.ttmDistributionRate, formatPercent)],
-    ["총보수", (etf) => formatNullable(etf.cost.expenseRatio, formatPercent)],
+    ["총보수", (etf) => formatNullable(etf.cost.expenseRatio, formatExpenseRatio)],
     ["순자산 규모(AUM)", (etf) => formatNullable(etf.aum, (value) => formatMoney(value, etf.currency))],
     ["1년 총수익률", (etf) => formatNullable(etf.performance.totalReturn.oneYear, formatPercent)],
     ["3년 총수익률", (etf) => formatNullable(etf.performance.totalReturn.threeYear, formatPercent)],

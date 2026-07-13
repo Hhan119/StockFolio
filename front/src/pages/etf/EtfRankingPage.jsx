@@ -15,7 +15,7 @@ import {
 } from "../../components/etf/index.jsx";
 import { etfMockApi, MOCK_ETFS } from "../../services/etfMockApi.js";
 import { formatNullable } from "../../utils/etfCalculations.js";
-import { formatMoney, formatPercent } from "../../utils/format.js";
+import { formatExpenseRatio, formatMoney, formatPercent } from "../../utils/format.js";
 
 const rankingCopy = {
   "high-dividend": {
@@ -163,7 +163,7 @@ function getColumns(kind) {
       { label: "최근 12개월 지급 횟수", render: (etf) => `${etf.distribution.history.length}회` },
       { label: "분배금 변동성", render: (etf) => (etf.category.includes("커버드콜") ? "높음" : "보통") },
       { label: "1년 총수익률", render: (etf) => formatNullable(etf.performance.totalReturn.oneYear, formatPercent) },
-      { label: "총보수", render: (etf) => formatNullable(etf.cost.expenseRatio, formatPercent) },
+      { label: "총보수", render: (etf) => formatNullable(etf.cost.expenseRatio, formatExpenseRatio) },
       { label: "투자 전략", render: (etf) => etf.strategy },
     ];
   }
@@ -175,7 +175,7 @@ function getColumns(kind) {
       { label: "5년 분배금 연평균 성장률", render: (etf) => formatNullable(etf.distribution.distributionCagr5y, formatPercent) },
       { label: "연속 분배금 증가 연수", render: (etf) => etf.distribution.annualIncreaseYears ?? "N/A" },
       { label: "5년 총수익률", render: (etf) => formatNullable(etf.performance.totalReturn.fiveYear, formatPercent) },
-      { label: "총보수", render: (etf) => formatNullable(etf.cost.expenseRatio, formatPercent) },
+      { label: "총보수", render: (etf) => formatNullable(etf.cost.expenseRatio, formatExpenseRatio) },
       { label: "순자산 규모", render: (etf) => formatNullable(etf.aum, (value) => formatMoney(value, etf.currency)) },
     ];
   }
@@ -185,7 +185,7 @@ function getColumns(kind) {
     { label: "3년 평균 분배율", render: (etf) => formatNullable(etf.distribution.distributionCagr3y, formatPercent) },
     { label: "분배 주기", render: (etf) => etf.distribution.frequency },
     { label: "1년 총수익률", render: (etf) => formatNullable(etf.performance.totalReturn.oneYear, formatPercent) },
-    { label: "총보수", render: (etf) => formatNullable(etf.cost.expenseRatio, formatPercent) },
+    { label: "총보수", render: (etf) => formatNullable(etf.cost.expenseRatio, formatExpenseRatio) },
     { label: "순자산 규모", render: (etf) => formatNullable(etf.aum, (value) => formatMoney(value, etf.currency)) },
     { label: "투자 전략", render: (etf) => etf.strategy },
   ];

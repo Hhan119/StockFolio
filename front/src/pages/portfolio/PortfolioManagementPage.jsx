@@ -18,6 +18,8 @@ function PortfolioManagementPage() {
   const [keyword, setKeyword] = useState("");
   const [results, setResults] = useState([]);
   const [selectedStock, setSelectedStock] = useState(null);
+  const [instrumentInfo, setInstrumentInfo] = useState(null);
+  const [instrumentInfoLoading, setInstrumentInfoLoading] = useState(false);
   const [holdingForm, setHoldingForm] = useState(emptyHoldingForm);
   const [draftHoldings, setDraftHoldings] = useState([]);
   const [savedPanelOpen, setSavedPanelOpen] = useState(false);
@@ -94,13 +96,23 @@ function PortfolioManagementPage() {
     }
   };
 
-  const pickStock = (stock) => {
+  const pickStock = async (stock) => {
     setSelectedStock(stock);
+    setInstrumentInfo(null);
     setHoldingForm({
       quantity: 1,
       averagePrice: stock.currentPrice ? String(stock.currentPrice) : "",
       memo: "",
     });
+    setInstrumentInfoLoading(true);
+    try {
+      const data = await stockService.instrument(stock.market, stock.ticker);
+      setInstrumentInfo(data);
+    } catch {
+      setInstrumentInfo(null);
+    } finally {
+      setInstrumentInfoLoading(false);
+    }
   };
 
   const addDraftHolding = (event) => {
@@ -310,7 +322,7 @@ function PortfolioManagementPage() {
   const selectedStocks = selectedDetail?.stocks || [];
 
   return (
-    <section className="grid w-full min-w-0 max-w-full gap-4">
+    <section className="grid w-full min-w-0 max-w-full gap-4 overflow-x-clip">
       <header className="rounded-2xl bg-slate-950 p-4 text-white shadow-sm sm:p-5 lg:p-6">
         <p className="text-xs font-black uppercase tracking-wider text-cyan-300">Portfolio Builder</p>
         <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -374,9 +386,9 @@ function PortfolioManagementPage() {
       </section>
 
       <div className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
-        <main className="grid min-w-0 gap-4">
+        <main className="grid min-w-0 max-w-full gap-4 overflow-hidden">
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
-            <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr))]">
               <div className="grid content-start gap-3">
                 <div className="flex min-h-11 items-center">
                   <h3 className="text-xl font-black text-slate-950 dark:text-white">1. 저장 방식</h3>
@@ -495,7 +507,7 @@ function PortfolioManagementPage() {
                               {item.ticker} · {item.market === "KR" ? "국내" : "해외"}
                             </span>
                           </div>
-                          <span className="shrink-0 text-sm font-black">{formatMoney(item.currentPrice, item.currency)}</span>
+                          <span className="shrink-0 text-sm font-black">{Number(item.currentPrice || 0) > 0 ? formatMoney(item.currentPrice, item.currency) : "가격 확인 중"}</span>
                         </div>
                       </button>
                     );
@@ -508,12 +520,13 @@ function PortfolioManagementPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <strong className="block text-lg font-black text-slate-950 dark:text-white">{selectedStock.name}</strong>
-                        <span className="text-sm font-bold text-slate-500 dark:text-slate-400">{selectedStock.ticker} · 현재가 {formatMoney(selectedStock.currentPrice, selectedStock.currency)}</span>
+                        <span className="text-sm font-bold text-slate-500 dark:text-slate-400">{selectedStock.ticker} · 현재가 {Number(selectedStock.currentPrice || 0) > 0 ? formatMoney(selectedStock.currentPrice, selectedStock.currency) : "확인 중"}</span>
                       </div>
-                      <button className="text-sm font-black text-slate-400 hover:text-slate-950 dark:hover:text-white" onClick={() => setSelectedStock(null)} type="button">
+                      <button className="text-sm font-black text-slate-400 hover:text-slate-950 dark:hover:text-white" onClick={() => { setSelectedStock(null); setInstrumentInfo(null); }} type="button">
                         취소
                       </button>
                     </div>
+                    <InstrumentDataPreview data={instrumentInfo} loading={instrumentInfoLoading} />
                     <div className="mt-3 grid gap-2 sm:grid-cols-3">
                       <NumberInput label="수량" value={holdingForm.quantity} onChange={(value) => setHoldingForm({ ...holdingForm, quantity: value })} />
                       <NumberInput label="평균단가" step="0.01" value={holdingForm.averagePrice} onChange={(value) => setHoldingForm({ ...holdingForm, averagePrice: value })} />
@@ -542,7 +555,7 @@ function PortfolioManagementPage() {
               </button>
             </div>
 
-            <div className="table-scroll mt-4 hidden max-w-full overflow-x-auto lg:block" tabIndex={0}>
+            <div className="table-scroll mt-4 hidden max-w-full overflow-x-auto xl:block" tabIndex={0}>
               <table className="w-full min-w-[760px] text-left text-sm">
                 <thead className="border-b border-slate-200 text-xs font-black uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:text-slate-400">
                   <tr>
@@ -574,7 +587,7 @@ function PortfolioManagementPage() {
                 </tbody>
               </table>
             </div>
-            <div className="mt-4 grid gap-2 lg:hidden">
+            <div className="mt-4 grid gap-2 xl:hidden">
               {draftHoldings.map((holding) => (
                 <article className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950" key={holding.key}>
                   <div className="flex items-start justify-between gap-3">
@@ -731,6 +744,52 @@ function PortfolioManagementPage() {
   );
 }
 
+function InstrumentDataPreview({ data, loading }) {
+  if (loading) {
+    return <div className="mt-3 h-20 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" />;
+  }
+  if (!data) {
+    return <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">세부 데이터 공급 상태를 확인하지 못했습니다.</p>;
+  }
+
+  const latestDividend = [...(data.dividends || [])]
+    .sort((left, right) => String(right.paymentDate || right.exDividendDate).localeCompare(String(left.paymentDate || left.exDividendDate)))[0];
+  const latestFinancial = data.financials?.[0];
+  const source = (data.sources || []).join(" · ") || "공급자 정보 없음";
+
+  if (data.etf) {
+    return (
+      <div className="mt-3 rounded-2xl border border-cyan-200 bg-cyan-50/70 p-3 dark:border-cyan-900 dark:bg-cyan-950/30">
+        <div className="grid gap-2 text-xs font-black text-slate-700 dark:text-slate-200 sm:grid-cols-2 xl:grid-cols-3">
+          <span>유형 {data.etfProfile?.assetClass || "ETF"}</span>
+          <span>운용사 {data.etfProfile?.provider || "정보 없음"}</span>
+          <span>구성종목 {data.etfProfile?.holdingsCount ? `${Number(data.etfProfile.holdingsCount).toLocaleString("ko-KR")}개` : data.holdings?.length ? `${data.holdings.length}개 확인` : "정보 없음"}</span>
+          <span>최근 1주당 분배금 {latestDividend ? formatMoney(latestDividend.amountPerShare, latestDividend.currency) : "정보 없음"}</span>
+          <span>최근 12개월 분배금 {data.etfProfile?.dividendPerShareTtm ? formatMoney(data.etfProfile.dividendPerShareTtm, data.quote?.currency || data.etfProfile?.currency) : "정보 없음"}</span>
+          <span>최근 1년 성과 {data.etfProfile?.returnOneYear === null || data.etfProfile?.returnOneYear === undefined ? "정보 없음" : formatPercent(data.etfProfile.returnOneYear)}</span>
+          <span>총보수 {data.etfProfile?.expenseRatio ? `${Number(data.etfProfile.expenseRatio).toFixed(3)}%` : "정보 없음"}</span>
+          <span className="truncate" title={source}>출처 {source}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/70">
+      {latestFinancial ? (
+        <div className="grid gap-2 text-xs font-black text-slate-700 dark:text-slate-200 sm:grid-cols-3">
+          <span>{latestFinancial.fiscalYear}년 매출 {latestFinancial.revenue === null ? "정보 없음" : formatMoney(latestFinancial.revenue, latestFinancial.currency)}</span>
+          <span>영업이익 {latestFinancial.operatingIncome === null ? "정보 없음" : formatMoney(latestFinancial.operatingIncome, latestFinancial.currency)}</span>
+          <span>순이익 {latestFinancial.netIncome === null ? "정보 없음" : formatMoney(latestFinancial.netIncome, latestFinancial.currency)}</span>
+        </div>
+      ) : (
+        <p className="text-xs font-bold text-slate-500 dark:text-slate-400">재무제표 공급 데이터가 없습니다.</p>
+      )}
+      <p className="mt-2 truncate text-[11px] font-bold text-slate-500 dark:text-slate-400" title={source}>출처 {source}</p>
+    </div>
+  );
+}
+
 function SavedPortfolioDetail({ detail, stocks, onDelete, onEditStock, onRemoveStock, loading }) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -754,7 +813,7 @@ function SavedPortfolioDetail({ detail, stocks, onDelete, onEditStock, onRemoveS
         <Metric label="수익률" value={formatPercent(detail?.totalProfitLossRate || 0)} tone={Number(detail?.totalProfitLossRate || 0) >= 0 ? "positive" : "negative"} />
       </div>
 
-      <div className="table-scroll mt-5 hidden max-w-full overflow-x-auto lg:block" tabIndex={0}>
+      <div className="table-scroll mt-5 hidden max-w-full overflow-x-auto min-[1800px]:block" tabIndex={0}>
         <table className="w-full min-w-[1080px] text-left text-sm">
           <thead className="border-b border-slate-200 text-xs font-black uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:text-slate-400">
             <tr>
@@ -801,7 +860,7 @@ function SavedPortfolioDetail({ detail, stocks, onDelete, onEditStock, onRemoveS
           </tbody>
         </table>
       </div>
-      <div className="mt-5 grid gap-2 lg:hidden">
+      <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 min-[1800px]:hidden">
         {stocks.map((stock) => (
           <article className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950" key={stock.id}>
             <div className="flex items-start justify-between gap-3">

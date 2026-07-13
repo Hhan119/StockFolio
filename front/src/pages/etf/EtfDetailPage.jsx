@@ -18,9 +18,9 @@ import {
   SkeletonState,
   TotalReturnChart,
 } from "../../components/etf/index.jsx";
-import { etfMockApi } from "../../services/etfMockApi.js";
+import { etfMarketService } from "../../services/etfMarketService.js";
 import { formatNullable, getPerformanceTone } from "../../utils/etfCalculations.js";
-import { formatMoney, formatPercent } from "../../utils/format.js";
+import { formatExpenseRatio, formatMoney, formatPercent } from "../../utils/format.js";
 
 const tabs = [
   ["overview", "한눈에 보기"],
@@ -38,28 +38,31 @@ function EtfDetailPage() {
 
   const etfQuery = useQuery({
     queryKey: ["etf-detail", slug],
-    queryFn: () => etfMockApi.getEtf(slug),
+    queryFn: () => etfMarketService.getEtf(slug),
     retry: false,
   });
 
   const performanceQuery = useQuery({
     queryKey: ["etf-performance", slug],
-    queryFn: () => etfMockApi.getPerformance(slug),
+    queryFn: async () => ({ data: (await etfMarketService.getEtf(slug)).data.performance }),
     enabled: activeTab === "performance",
   });
   const distributionQuery = useQuery({
     queryKey: ["etf-distributions", slug],
-    queryFn: () => etfMockApi.getDistributions(slug),
+    queryFn: async () => ({ data: (await etfMarketService.getEtf(slug)).data.distribution }),
     enabled: activeTab === "distribution",
   });
   const holdingsQuery = useQuery({
     queryKey: ["etf-holdings", slug],
-    queryFn: () => etfMockApi.getHoldings(slug),
+    queryFn: async () => {
+      const data = (await etfMarketService.getEtf(slug)).data;
+      return { data: { holdings: data.topHoldings, sectors: data.sectorAllocations, countries: data.countryAllocations, top10Concentration: data.top10Concentration, asOf: data.holdingsAsOf } };
+    },
     enabled: activeTab === "holdings",
   });
   const similarQuery = useQuery({
     queryKey: ["etf-similar", slug],
-    queryFn: () => etfMockApi.getSimilar(slug),
+    queryFn: async () => ({ data: [] }),
     enabled: activeTab === "overview",
   });
 
@@ -89,7 +92,7 @@ function EtfDetailPage() {
               <EtfBadge tone={etf.listingRegion === "domestic" ? "emerald" : "cyan"}>{etf.regionLabel}</EtfBadge>
               <EtfBadge>{etf.strategy}</EtfBadge>
               <EtfBadge>{etf.distribution.frequency} 분배</EtfBadge>
-              <EtfBadge tone="rose">샘플 데이터</EtfBadge>
+              <EtfBadge tone="emerald">시장 데이터</EtfBadge>
             </div>
             <h2 className="mt-4 text-4xl font-black">{etf.ticker}</h2>
             <p className="mt-2 text-lg font-bold text-slate-300">{etf.name}</p>
@@ -110,9 +113,9 @@ function EtfDetailPage() {
       </div>
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-        <EtfMetricCard label="현재가" value={formatNullable(etf.quote.currentPrice, (value) => formatMoney(value, etf.currency))} help="ETF가 거래되는 시장의 최근 가격입니다. 샘플 데이터 기준입니다." />
+        <EtfMetricCard label="현재가" value={formatNullable(etf.quote.currentPrice, (value) => formatMoney(value, etf.currency))} help="ETF가 거래되는 시장의 최근 가격입니다. 공급자별 지연 시간이 있을 수 있습니다." />
         <EtfMetricCard label="최근 12개월(TTM) 분배율" value={formatNullable(etf.distribution.ttmDistributionRate, formatPercent)} help="최근 12개월 분배금을 현재가로 나눈 비율입니다." />
-        <EtfMetricCard label="총보수" value={formatNullable(etf.cost.expenseRatio, formatPercent)} help="Expense Ratio. ETF 운용에 드는 연간 비용 비율입니다." />
+        <EtfMetricCard label="총보수" value={formatNullable(etf.cost.expenseRatio, formatExpenseRatio)} help="Expense Ratio. ETF 운용에 드는 연간 비용 비율입니다." />
         <EtfMetricCard label="순자산 규모(AUM)" value={formatNullable(etf.aum, (value) => formatMoney(value, etf.currency))} help="Assets Under Management. ETF가 운용하는 자산 규모입니다." />
         <EtfMetricCard label="1년 총수익률" value={formatNullable(etf.performance.totalReturn.oneYear, formatPercent)} tone={getPerformanceTone(etf.performance.totalReturn.oneYear)} help="가격 변화와 분배금을 함께 고려한 최근 1년 수익률입니다." />
         <EtfMetricCard label="분배 주기" value={etf.distribution.frequency} help="분배금이 지급되는 빈도입니다. 같은 금액 지급을 보장하지 않습니다." />
@@ -142,7 +145,7 @@ function EtfDetailPage() {
               <ul className="mt-3 grid gap-2 text-sm font-bold text-slate-600 dark:text-slate-300">{etf.cons.map((item) => <li key={item}>· {item}</li>)}</ul>
             </article>
           </div>
-          <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          {(similarQuery.isLoading || similarQuery.isError || (similarQuery.data?.data || []).length > 0) && <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <h3 className="text-xl font-black text-slate-950 dark:text-white">비슷한 ETF</h3>
             {similarQuery.isLoading && <SkeletonState rows={1} />}
             {similarQuery.isError && <ErrorState error={similarQuery.error} onRetry={similarQuery.refetch} />}
@@ -155,7 +158,7 @@ function EtfDetailPage() {
                 </Link>
               ))}
             </div>
-          </article>
+          </article>}
         </section>
       )}
 
@@ -165,8 +168,8 @@ function EtfDetailPage() {
             <section className="grid gap-4 lg:grid-cols-[1fr_360px]">
               <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <h3 className="text-xl font-black text-slate-950 dark:text-white">총수익률 비교</h3>
-                <p className="mt-2 text-sm font-semibold text-slate-500">총수익률을 기본값으로 사용하며, ETF·추종 지수·카테고리 평균을 비교합니다.</p>
-                <div className="mt-4"><TotalReturnChart series={performance.series} /></div>
+                <p className="mt-2 text-sm font-semibold text-slate-500">검증된 성과 데이터가 공급될 때만 표시합니다. 현재가 변동을 장기 수익률로 대체하지 않습니다.</p>
+                {performance.series.length > 0 ? <div className="mt-4"><TotalReturnChart series={performance.series} /></div> : <EmptyState title="성과 데이터 없음" description="현재 공급자가 장기 성과 데이터를 제공하지 않았습니다." />}
               </article>
               <InvestmentDisclaimer />
             </section>
@@ -180,7 +183,7 @@ function EtfDetailPage() {
             <section className="grid gap-4 lg:grid-cols-[1fr_360px]">
               <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <h3 className="text-xl font-black text-slate-950 dark:text-white">최근 12개월 월별 분배금</h3>
-                <div className="mt-4"><DistributionChart history={distribution.history} /></div>
+                {distribution.history.length > 0 ? <div className="mt-4"><DistributionChart history={distribution.history} /></div> : <EmptyState title="분배금 이력 없음" description="확인 가능한 분배금 이력이 없습니다." />}
               </article>
               <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <h3 className="text-xl font-black text-slate-950 dark:text-white">분배금 요약</h3>
@@ -190,8 +193,8 @@ function EtfDetailPage() {
                   <EtfMetricCard label="3년 연평균 성장률(CAGR)" value={formatNullable(distribution.distributionCagr3y, formatPercent)} />
                   <EtfMetricCard label="5년 연평균 성장률(CAGR)" value={formatNullable(distribution.distributionCagr5y, formatPercent)} />
                 </div>
-                <p className="mt-4 text-sm font-bold text-slate-600 dark:text-slate-300">다음 배당락일: {distribution.nextExDate.date} ({distribution.nextExDate.confirmed ? "확정" : "예상"})</p>
-                <p className="mt-1 text-sm font-bold text-slate-600 dark:text-slate-300">다음 지급일: {distribution.nextPayDate.date} ({distribution.nextPayDate.confirmed ? "확정" : "예상"})</p>
+                <p className="mt-4 text-sm font-bold text-slate-600 dark:text-slate-300">다음 배당락일: {distribution.nextExDate.date || "정보 없음"} {distribution.nextExDate.date && `(${distribution.nextExDate.confirmed ? "확정" : "예상"})`}</p>
+                <p className="mt-1 text-sm font-bold text-slate-600 dark:text-slate-300">다음 지급일: {distribution.nextPayDate.date || "정보 없음"} {distribution.nextPayDate.date && `(${distribution.nextPayDate.confirmed ? "확정" : "예상"})`}</p>
               </aside>
             </section>
           )}
@@ -207,7 +210,7 @@ function EtfDetailPage() {
                   <div><h3 className="text-xl font-black text-slate-950 dark:text-white">구성 종목</h3><p className="mt-1 text-sm font-bold text-slate-500">기준일: {holdings.asOf}</p></div>
                   <input className="form-control md:max-w-xs" placeholder="구성 종목 검색" value={holdingKeyword} onChange={(event) => setHoldingKeyword(event.target.value)} />
                 </div>
-                <div className="mt-4"><HoldingsTable holdings={filteredHoldings} /></div>
+                {filteredHoldings.length > 0 ? <div className="mt-4"><HoldingsTable holdings={filteredHoldings} /></div> : <EmptyState title="구성종목 정보 없음" description="운용사 또는 데이터 공급자가 구성종목을 제공하지 않았습니다." />}
               </article>
               <aside className="grid gap-4">
                 <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -249,7 +252,7 @@ function EtfDetailPage() {
 
       {activeTab === "cost" && (
         <section className="grid gap-4 lg:grid-cols-4">
-          <EtfMetricCard label="총보수" value={formatNullable(etf.cost.expenseRatio, formatPercent)} help="실제 비용은 보수 외 추적오차, 매매비용, 세금에 따라 달라질 수 있습니다." />
+          <EtfMetricCard label="총보수" value={formatNullable(etf.cost.expenseRatio, formatExpenseRatio)} help="실제 비용은 보수 외 추적오차, 매매비용, 세금에 따라 달라질 수 있습니다." />
           <EtfMetricCard label="100만원 기준 연 비용" value={formatNullable(etf.cost.annualCost.oneMillion, (value) => formatMoney(value, "KRW"))} />
           <EtfMetricCard label="1,000만원 기준 연 비용" value={formatNullable(etf.cost.annualCost.tenMillion, (value) => formatMoney(value, "KRW"))} />
           <EtfMetricCard label="1억원 기준 연 비용" value={formatNullable(etf.cost.annualCost.hundredMillion, (value) => formatMoney(value, "KRW"))} />

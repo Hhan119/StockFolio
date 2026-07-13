@@ -4,6 +4,7 @@ import com.example.StockFolio.dto.MarketDto;
 import com.example.StockFolio.service.MarketDataService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -33,5 +34,22 @@ public class MarketDataController {
     public List<MarketDto.SearchResult> topEtfs(@RequestParam(defaultValue = "ALL") String market,
                                                 @RequestParam(defaultValue = "5") int limit) {
         return marketDataService.topEtfs(market, limit);
+    }
+
+    @GetMapping("/etfs/search")
+    public List<MarketDto.EtfSearchResult> searchEtfs(
+            @RequestParam(defaultValue = "ALL") String market,
+            @RequestParam(defaultValue = "") String keyword,
+            @RequestParam(defaultValue = "60") int limit
+    ) {
+        return marketDataService.searchEtfs(market, keyword, limit);
+    }
+
+    @GetMapping("/instruments/{ticker}")
+    public MarketDto.InstrumentSnapshot instrument(
+            @PathVariable String ticker,
+            @RequestParam(defaultValue = "AUTO") String market
+    ) {
+        return marketDataService.instrumentSnapshot(market, ticker);
     }
 }

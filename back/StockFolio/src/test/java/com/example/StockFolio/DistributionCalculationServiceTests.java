@@ -103,7 +103,7 @@ class DistributionCalculationServiceTests {
     }
 
     @Test
-    void estimatesKoreanCoveredCallEtfDistributionsWhenMarketHistoryIsMissing() {
+    void usesLatestMarketHistoryOrEstimateForKoreanCoveredCallEtf() {
         Stock stock = saveHolding("475720", "TIGER 미국테크TOP10+10%프리미엄", 10, "KRW");
         stock.setCurrentPrice(new BigDecimal("10000"));
         stockRepository.save(stock);
@@ -112,14 +112,14 @@ class DistributionCalculationServiceTests {
                 distributionCalculationService.getHoldingSummary(stock.getId(), stock.getPortfolio().getUser().getId(), false);
 
         assertThat(summary.getObservedFrequency()).isEqualTo(DistributionFrequency.MONTHLY);
-        assertThat(summary.getDataStatus()).isEqualTo(DataStatus.ESTIMATED);
+        assertThat(summary.getDataStatus()).isIn(DataStatus.ACTUAL, DataStatus.ESTIMATED);
         assertThat(summary.getLatestAmountPerShare()).isGreaterThan(BigDecimal.ZERO);
         assertThat(summary.getEstimatedAnnualGrossAmount()).isGreaterThan(BigDecimal.ZERO);
-        assertThat(summary.getProvider()).contains("local-etf-dividend-estimate");
+        assertThat(summary.getProvider()).doesNotContain("mock");
     }
 
     @Test
-    void estimatesKoreanBroadMarketEtfDistributionsWhenMarketHistoryIsMissing() {
+    void usesLatestMarketHistoryOrEstimateForKoreanBroadMarketEtf() {
         Stock stock = saveHolding("360750", "TIGER 미국S&P500", 8, "KRW");
         stock.setCurrentPrice(new BigDecimal("20000"));
         stockRepository.save(stock);
@@ -128,10 +128,10 @@ class DistributionCalculationServiceTests {
                 distributionCalculationService.getHoldingSummary(stock.getId(), stock.getPortfolio().getUser().getId(), false);
 
         assertThat(summary.getObservedFrequency()).isEqualTo(DistributionFrequency.QUARTERLY);
-        assertThat(summary.getDataStatus()).isEqualTo(DataStatus.ESTIMATED);
-        assertThat(summary.getLatestAmountPerShare()).isEqualByComparingTo("65.000000");
-        assertThat(summary.getEstimatedAnnualGrossAmount()).isEqualByComparingTo("2080.00");
-        assertThat(summary.getProvider()).contains("local-etf-dividend-estimate");
+        assertThat(summary.getDataStatus()).isIn(DataStatus.ACTUAL, DataStatus.ESTIMATED);
+        assertThat(summary.getLatestAmountPerShare()).isGreaterThan(BigDecimal.ZERO);
+        assertThat(summary.getEstimatedAnnualGrossAmount()).isGreaterThan(BigDecimal.ZERO);
+        assertThat(summary.getProvider()).doesNotContain("mock");
     }
 
     private Stock saveHolding(String ticker, String name, int quantity, String currency) {

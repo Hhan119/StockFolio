@@ -131,6 +131,48 @@ def quote_kr(ticker):
     }
 
 
+def etf_holdings_kr(ticker):
+    from pykrx import stock
+
+    frame = None
+    for days_ago in range(0, 10):
+        date = (datetime.now() - timedelta(days=days_ago)).strftime("%Y%m%d")
+        try:
+            candidate = stock.get_etf_portfolio_deposit_file(ticker, date)
+            if candidate is not None and not candidate.empty:
+                frame = candidate
+                break
+        except Exception:
+            continue
+
+    if frame is None or frame.empty:
+        return []
+
+    def row_number(row, names):
+        for name in names:
+            if name in row.index:
+                return as_float(row[name])
+        return 0
+
+    holdings = []
+    for holding_ticker, row in frame.iterrows():
+        code = str(holding_ticker)
+        try:
+            name = stock.get_market_ticker_name(code) if code.isdigit() else code
+        except Exception:
+            name = code
+        holdings.append({
+            "ticker": code,
+            "name": name or code,
+            "weight": row_number(row, ["비중", "weight", "Weight"]),
+            "shares": row_number(row, ["계약수", "수량", "shares", "Shares"]),
+            "marketValue": row_number(row, ["금액", "평가금액", "marketValue", "MarketValue"]),
+            "source": "pykrx-etf-holdings",
+        })
+    holdings.sort(key=lambda item: item.get("weight", 0), reverse=True)
+    return holdings[:100]
+
+
 def search_us(keyword):
     import yfinance as yf
 
@@ -184,6 +226,8 @@ def main():
         result = search_kr(value) if market == "KR" else search_us(value)
     elif action == "quote":
         result = quote_kr(value) if market == "KR" else quote_us(value)
+    elif action == "etf_holdings":
+        result = etf_holdings_kr(value) if market == "KR" else []
     else:
         raise ValueError("Unknown action")
     print(json.dumps(result, ensure_ascii=False))

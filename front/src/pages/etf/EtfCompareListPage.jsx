@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import MarketSegmentedControl from "../../components/MarketSegmentedControl.jsx";
@@ -14,21 +14,23 @@ import {
   SkeletonState,
 } from "../../components/etf/index.jsx";
 import { comparisonMatchesMarketFilter, comparisons, getComparisonEtfs, isDomesticEtf } from "../../data/publicContent.js";
-import { etfMockApi, MOCK_ETFS } from "../../services/etfMockApi.js";
+import { etfMarketService, toEtfSuggestion } from "../../services/etfMarketService.js";
 
 function EtfCompareListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [marketFilter, setMarketFilter] = useState("all");
   const [keyword, setKeyword] = useState("");
+  const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const tickers = (searchParams.get("tickers") || "").split(",").map((item) => item.trim()).filter(Boolean);
-  const maxItems = typeof window !== "undefined" && window.innerWidth < 768 ? 3 : 4;
+  const maxItems = 4;
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedKeyword(keyword.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [keyword]);
 
   const counts = useMemo(
-    () => ({
-      all: comparisons.length,
-      domestic: comparisons.filter((comparison) => comparisonMatchesMarketFilter(comparison, "domestic")).length,
-      overseas: comparisons.filter((comparison) => comparisonMatchesMarketFilter(comparison, "overseas")).length,
-    }),
+    () => ({}),
     [],
   );
 
@@ -37,16 +39,28 @@ function EtfCompareListPage() {
     [marketFilter],
   );
 
-  const suggestions = useMemo(() => {
-    const normalized = keyword.trim().toLowerCase();
-    if (!normalized) return [];
-    return MOCK_ETFS.filter((etf) => `${etf.ticker} ${etf.name} ${etf.provider} ${etf.strategy}`.toLowerCase().includes(normalized));
-  }, [keyword]);
+  const suggestionQuery = useQuery({
+    queryKey: ["etf-compare-suggestions", debouncedKeyword, marketFilter],
+    queryFn: () => etfMarketService.searchEtfs(
+      debouncedKeyword,
+      marketFilter === "domestic" ? "KR" : marketFilter === "overseas" ? "US" : "ALL",
+      40,
+    ),
+    enabled: debouncedKeyword.length > 0,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+
+  const suggestions = useMemo(
+    () => (suggestionQuery.data || []).map(toEtfSuggestion),
+    [suggestionQuery.data],
+  );
 
   const compareQuery = useQuery({
     queryKey: ["etf-compare", tickers.join(",")],
-    queryFn: () => etfMockApi.compareEtfs(tickers),
+    queryFn: () => etfMarketService.compareEtfs(tickers),
     enabled: tickers.length > 0,
+    retry: false,
   });
 
   const setTickers = (nextTickers) => setSearchParams(nextTickers.length ? { tickers: nextTickers.join(",") } : {});
@@ -90,6 +104,8 @@ function EtfCompareListPage() {
             <button className="btn-dark mt-3 text-xs" type="button" onClick={shareUrl}>비교 URL 복사</button>
           </div>
         </div>
+        {suggestionQuery.isFetching && <p className="mt-3 text-sm font-bold text-slate-500 dark:text-slate-400">ETF 전체 목록을 검색하고 있습니다.</p>}
+        {suggestionQuery.isError && <p className="mt-3 text-sm font-bold text-rose-600 dark:text-rose-300">ETF 검색 공급자에 연결하지 못했습니다.</p>}
       </div>
 
       {tickers.length === 0 && (

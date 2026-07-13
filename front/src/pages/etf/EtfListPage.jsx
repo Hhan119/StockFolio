@@ -13,7 +13,7 @@ import {
   SkeletonState,
 } from "../../components/etf/index.jsx";
 import { etfMockApi, MOCK_ETFS } from "../../services/etfMockApi.js";
-import { stockService } from "../../services/stockService.js";
+import { etfMarketService, toEtfSuggestion } from "../../services/etfMarketService.js";
 import { formatMoney } from "../../utils/format.js";
 
 const filterOptions = {
@@ -48,16 +48,6 @@ const filterOptions = {
   ],
 };
 
-const domesticEtfKeywords = [
-  "ETF", "ETN", "KODEX", "TIGER", "RISE", "ACE", "SOL", "PLUS", "KBSTAR", "KOSEF", "HANARO", "TIMEFOLIO", "WON",
-  "커버드콜", "채권", "국채", "레버리지", "인버스", "S&P", "나스닥",
-];
-
-const overseasEtfKeywords = [
-  "ETF", "ETN", "ISHARES", "VANGUARD", "SPDR", "INVESCO",
-  "PROSHARES", "GLOBAL X", "DIREXION", "JPMORGAN", "SCHWAB", "WISDOMTREE", "AMPLIFY", "FUND", "TRUST",
-];
-
 const regionToMarket = (region) => {
   if (region === "domestic") return "KR";
   if (region === "overseas") return "US";
@@ -69,12 +59,6 @@ const normalizeText = (value) => String(value || "").toUpperCase();
 const findStaticEtf = (item) => MOCK_ETFS.find((etf) => etf.ticker.toUpperCase() === normalizeText(item.ticker));
 
 const liveResultKey = (item, index) => `${item.market || "ETF"}-${item.ticker || item.name}-${index}`;
-
-const isLiveEtfResult = (item) => {
-  const text = normalizeText([item?.ticker, item?.name, item?.exchange, item?.source].filter(Boolean).join(" "));
-  const keywords = item?.market === "US" ? overseasEtfKeywords : [...domesticEtfKeywords, ...overseasEtfKeywords];
-  return keywords.some((keyword) => text.includes(keyword));
-};
 
 const matchesAssetFilter = (item, assetType) => {
   if (assetType === "all") return true;
@@ -118,11 +102,7 @@ function EtfListPage() {
   const maxCompareItems = typeof window !== "undefined" && window.innerWidth < 768 ? 3 : 4;
 
   const counts = useMemo(
-    () => ({
-      all: MOCK_ETFS.length,
-      domestic: MOCK_ETFS.filter((etf) => etf.listingRegion === "domestic").length,
-      overseas: MOCK_ETFS.filter((etf) => etf.listingRegion === "overseas").length,
-    }),
+    () => ({}),
     [],
   );
 
@@ -134,16 +114,15 @@ function EtfListPage() {
 
   const liveSearchQuery = useQuery({
     queryKey: ["etf-live-search", debouncedKeyword, liveMarket],
-    queryFn: () => stockService.search(debouncedKeyword, liveMarket),
+    queryFn: () => etfMarketService.searchEtfs(debouncedKeyword, liveMarket, 80),
     enabled: debouncedKeyword.trim().length > 0,
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
     retry: false,
   });
 
   const liveItems = useMemo(() => {
     const seen = new Set();
     return (liveSearchQuery.data || [])
-      .filter(isLiveEtfResult)
       .filter((item) => matchesAssetFilter(item, filters.assetType))
       .filter((item) => {
         const key = `${item.market}-${item.ticker}`;
@@ -151,18 +130,13 @@ function EtfListPage() {
         seen.add(key);
         return true;
       })
-      .slice(0, 40);
+      .slice(0, 80);
   }, [filters.assetType, liveSearchQuery.data]);
 
   const suggestions = useMemo(() => {
     const liveSuggestions = liveItems.slice(0, 8).map((item) => {
       const staticEtf = findStaticEtf(item);
-      return {
-        ...item,
-        slug: staticEtf?.slug,
-        ticker: item.ticker,
-        name: item.name,
-      };
+      return { ...toEtfSuggestion(item), slug: staticEtf?.slug || String(item.ticker).toLowerCase() };
     });
     const seen = new Set();
     return [...liveSuggestions, ...staticSuggestions].filter((item) => {
@@ -176,6 +150,7 @@ function EtfListPage() {
   const query = useQuery({
     queryKey: ["etf-search", debouncedKeyword, filters],
     queryFn: () => etfMockApi.searchEtfs({ keyword: debouncedKeyword, filters, size: 60 }),
+    enabled: !debouncedKeyword.trim(),
   });
 
   const updateFilter = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
@@ -202,15 +177,15 @@ function EtfListPage() {
   };
 
   const selectSuggestion = (etf) => {
-    if (etf?.slug) {
-      navigate(`/etf/${etf.slug}`);
+    if (etf?.ticker) {
+      navigate(`/etf/${etf.ticker.toLowerCase()}`);
       return;
     }
     syncKeyword(etf?.ticker || etf?.name || "");
   };
 
   const items = query.data?.data || [];
-  const totalResultCount = (query.data?.pagination?.totalItems ?? 0) + liveItems.length;
+  const totalResultCount = debouncedKeyword.trim() ? liveItems.length : (query.data?.pagination?.totalItems ?? 0);
 
   return (
     <section className="grid gap-5 pb-28 lg:pb-4">
@@ -254,17 +229,19 @@ function EtfListPage() {
 
       {debouncedKeyword.trim() && (
         <LiveEtfSearchResults
+          compareItems={compareItems}
           error={liveSearchQuery.error}
           isLoading={liveSearchQuery.isFetching && !liveSearchQuery.data}
           items={liveItems}
           keyword={debouncedKeyword}
+          onToggleCompare={toggleCompare}
         />
       )}
 
-      {query.isLoading && <SkeletonState rows={4} />}
-      {query.isError && <ErrorState error={query.error} onRetry={query.refetch} />}
-      {!query.isLoading && !query.isError && items.length === 0 && <EmptyState title="검색 결과가 없습니다" description="검색어 또는 필터 조건을 조정해보세요." />}
-      {!query.isLoading && !query.isError && items.length > 0 && (
+      {!debouncedKeyword.trim() && query.isLoading && <SkeletonState rows={4} />}
+      {!debouncedKeyword.trim() && query.isError && <ErrorState error={query.error} onRetry={query.refetch} />}
+      {!debouncedKeyword.trim() && !query.isLoading && !query.isError && items.length === 0 && <EmptyState title="검색 결과가 없습니다" description="검색어 또는 필터 조건을 조정해보세요." />}
+      {!debouncedKeyword.trim() && !query.isLoading && !query.isError && items.length > 0 && (
         <>
           {viewMode === "table" && <EtfResultTable items={items} keyword={debouncedKeyword} compareItems={compareItems} onToggleCompare={toggleCompare} />}
           <div className={viewMode === "table" ? "grid gap-3 lg:hidden" : "grid gap-3 lg:grid-cols-2 2xl:grid-cols-3"}>
@@ -288,14 +265,14 @@ function EtfListPage() {
   );
 }
 
-function LiveEtfSearchResults({ items, isLoading, error, keyword }) {
+function LiveEtfSearchResults({ items, isLoading, error, keyword, compareItems, onToggleCompare }) {
   return (
     <section className="rounded-2xl border border-cyan-200 bg-cyan-50/70 p-4 shadow-sm dark:border-cyan-900 dark:bg-cyan-950/30">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-black uppercase tracking-wider text-cyan-700 dark:text-cyan-300">Market Search</p>
           <h3 className="mt-1 text-xl font-black text-slate-950 dark:text-white">최신 ETF/ETN 검색 결과</h3>
-          <p className="mt-1 text-sm font-bold text-slate-600 dark:text-slate-300">포트폴리오 종목 검색과 같은 API 경로를 사용합니다.</p>
+          <p className="mt-1 text-sm font-bold text-slate-600 dark:text-slate-300">국내는 KRX·네이버 ETF 목록, 해외는 FMP ETF 전체 목록에서 검색합니다.</p>
         </div>
         <span className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 shadow-sm dark:bg-slate-900 dark:text-slate-200">
           {keyword} · {items.length}개
@@ -325,7 +302,12 @@ function LiveEtfSearchResults({ items, isLoading, error, keyword }) {
       {!isLoading && !error && items.length > 0 && (
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {items.map((item, index) => (
-            <LiveEtfSearchCard item={item} key={liveResultKey(item, index)} />
+            <LiveEtfSearchCard
+              compareSelected={compareItems.some((selected) => selected.ticker === item.ticker)}
+              item={item}
+              key={liveResultKey(item, index)}
+              onToggleCompare={onToggleCompare}
+            />
           ))}
         </div>
       )}
@@ -333,11 +315,11 @@ function LiveEtfSearchResults({ items, isLoading, error, keyword }) {
   );
 }
 
-function LiveEtfSearchCard({ item }) {
-  const staticEtf = findStaticEtf(item);
+function LiveEtfSearchCard({ item, compareSelected, onToggleCompare }) {
   const hasPrice = Number(item.currentPrice || 0) > 0;
-  const content = (
-    <>
+  const comparisonItem = toEtfSuggestion(item);
+  return (
+    <article className="flex min-w-0 flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-cyan-700">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-lg font-black text-slate-950 dark:text-white">{item.ticker}</p>
@@ -361,20 +343,12 @@ function LiveEtfSearchCard({ item }) {
         <span className="rounded-lg bg-cyan-50 px-2 py-1 text-xs font-black text-cyan-700 dark:bg-cyan-950 dark:text-cyan-200">{item.exchange || "ETF"}</span>
         {item.dividendAvailable && <span className="rounded-lg bg-emerald-50 px-2 py-1 text-xs font-black text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200">분배금</span>}
       </div>
-    </>
-  );
-
-  if (staticEtf) {
-    return (
-      <Link className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-cyan-700" to={`/etf/${staticEtf.slug}`}>
-        {content}
-      </Link>
-    );
-  }
-
-  return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      {content}
+      <div className="mt-auto flex gap-2 pt-4">
+        <Link className="btn-dark flex-1 text-center text-xs" to={`/etf/${String(item.ticker).toLowerCase()}`}>상세보기</Link>
+        <button className="btn-muted flex-1 text-xs" type="button" onClick={() => onToggleCompare(comparisonItem)}>
+          {compareSelected ? "비교해제" : "비교담기"}
+        </button>
+      </div>
     </article>
   );
 }
