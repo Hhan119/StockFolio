@@ -25,10 +25,9 @@ function DividendGrowthTracker() {
 
   const annualDividend = Number(summary?.annualEstimated || 0);
   const nextYearGoal = annualDividend * (1 + targetGrowthRate / 100);
-  const monthly = summary?.monthly || [];
   const strongestMonth = useMemo(
-    () => monthly.reduce((best, item) => Number(item.estimatedTotal || 0) > Number(best.estimatedTotal || 0) ? item : best, { estimatedTotal: 0, month: "-" }),
-    [monthly],
+    () => (summary?.monthly || []).reduce((best, item) => Number(item.estimatedTotal || 0) > Number(best.estimatedTotal || 0) ? item : best, { estimatedTotal: 0, month: "-" }),
+    [summary?.monthly],
   );
 
   const rows = [

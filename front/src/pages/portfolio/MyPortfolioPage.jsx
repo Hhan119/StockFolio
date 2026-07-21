@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import StateMessage from "../../components/ui/StateMessage.jsx";
 import { portfolioService } from "../../services/portfolioService.js";
 import { stockService } from "../../services/stockService.js";
@@ -162,7 +162,7 @@ function MyPortfolioPage() {
   const legacyDividendInfoMap = useMemo(() => buildDividendInfoMap(dividendSummary), [dividendSummary]);
   const distributionInfoMap = useMemo(() => buildDistributionInfoMap(distributionSummary), [distributionSummary]);
 
-  const loadPortfolios = async () => {
+  const loadPortfolios = useCallback(async () => {
     const data = await portfolioService.list();
     setPortfolios(data);
     const nextId = selectedPortfolioId && data.some((portfolio) => String(portfolio.id) === String(selectedPortfolioId))
@@ -176,9 +176,9 @@ function MyPortfolioPage() {
       setDividendSummary(null);
       setDistributionSummary(null);
     }
-  };
+  }, [selectedPortfolioId]);
 
-  const loadDetail = async (portfolioId) => {
+  const loadDetail = useCallback(async (portfolioId) => {
     if (!portfolioId) {
       setDetail(null);
       setDividendSummary(null);
@@ -193,15 +193,15 @@ function MyPortfolioPage() {
     setDetail(portfolioDetail);
     setDividendSummary(legacyDividendResult.status === "fulfilled" ? legacyDividendResult.value : null);
     setDistributionSummary(distributionResult.status === "fulfilled" ? distributionResult.value : null);
-  };
-
-  useEffect(() => {
-    loadPortfolios().catch(() => setError("포트폴리오 목록을 불러오지 못했습니다."));
   }, []);
 
   useEffect(() => {
+    loadPortfolios().catch(() => setError("포트폴리오 목록을 불러오지 못했습니다."));
+  }, [loadPortfolios]);
+
+  useEffect(() => {
     loadDetail(selectedPortfolioId).catch(() => setError("포트폴리오 상세 정보를 불러오지 못했습니다."));
-  }, [selectedPortfolioId]);
+  }, [loadDetail, selectedPortfolioId]);
 
   const ensurePortfolio = async () => {
     if (selectedPortfolioId) return Number(selectedPortfolioId);

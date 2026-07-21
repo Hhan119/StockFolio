@@ -90,7 +90,8 @@ function EtfDetailPage() {
           <div>
             <div className="flex flex-wrap gap-2">
               <EtfBadge tone={etf.listingRegion === "domestic" ? "emerald" : "cyan"}>{etf.regionLabel}</EtfBadge>
-              <EtfBadge>{etf.strategy}</EtfBadge>
+              <EtfBadge>{etf.classification?.assetType || etf.category}</EtfBadge>
+              <EtfBadge>{etf.classification?.peerGroup || "ETF"}</EtfBadge>
               <EtfBadge>{etf.distribution.frequency} 분배</EtfBadge>
               <EtfBadge tone="emerald">시장 데이터</EtfBadge>
             </div>
@@ -134,6 +135,38 @@ function EtfDetailPage() {
       {activeTab === "overview" && (
         <section className="grid gap-5">
           <BeginnerSummary etf={etf} />
+          <section className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)]">
+            <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-wider text-cyan-700 dark:text-cyan-300">Rule Based Analysis</p>
+                  <h3 className="mt-1 text-xl font-black text-slate-950 dark:text-white">규칙 기반 분석</h3>
+                </div>
+                <span className={`rounded-xl px-3 py-2 text-xs font-black ${etf.dataQuality?.status === "ANALYZABLE" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200" : "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-200"}`}>
+                  데이터 품질 {etf.dataQuality?.score ?? 0}점 · {etf.dataQuality?.status || "N/A"}
+                </span>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                {[["인컴", etf.analysis?.incomeScore], ["성장", etf.analysis?.growthScore], ["비용", etf.analysis?.costScore], ["분산", etf.analysis?.diversificationScore], ["위험 대응", etf.analysis?.riskScore]].map(([label, value]) => (
+                  <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800" key={label}><p className="text-xs font-black text-slate-500">{label}</p><p className="mt-1 text-lg font-black text-slate-950 dark:text-white">{value ?? "N/A"}</p></div>
+                ))}
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <AnalysisList items={etf.analysis?.strengths} title="확인된 강점" tone="emerald" />
+                <AnalysisList items={etf.analysis?.cautions} title="주의할 점" tone="amber" />
+              </div>
+            </article>
+
+            <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <h3 className="text-lg font-black text-slate-950 dark:text-white">공통 분류</h3>
+              <dl className="mt-4 grid gap-3 text-sm">
+                {[["상장 국가", etf.classification?.listingCountry], ["자산 유형", etf.classification?.assetType], ["분배 주기", etf.distribution.frequency], ["환 노출", etf.classification?.fxExposure], ["비교군", etf.classification?.peerGroup], ["위험 단계", etf.classification?.riskLevel]].map(([label, value]) => (
+                  <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2 last:border-0 dark:border-slate-800" key={label}><dt className="font-bold text-slate-500">{label}</dt><dd className="text-right font-black text-slate-950 dark:text-white">{value || "정보 없음"}</dd></div>
+                ))}
+              </dl>
+              {etf.dataQuality?.missingFields?.length > 0 && <p className="mt-4 text-xs font-bold leading-5 text-amber-700 dark:text-amber-300">미확보: {etf.dataQuality.missingFields.join(", ")}</p>}
+            </aside>
+          </section>
           <div className="grid gap-4 lg:grid-cols-2">
             <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
               <h3 className="text-xl font-black text-slate-950 dark:text-white">살펴볼 수 있는 투자 목적</h3>
@@ -272,6 +305,16 @@ function AsyncPanel({ query, children }) {
   if (query.isError) return <ErrorState error={query.error} onRetry={query.refetch} />;
   if (!query.data?.data) return <EmptyState />;
   return children(query.data.data);
+}
+
+function AnalysisList({ title, items = [], tone }) {
+  const border = tone === "emerald" ? "border-emerald-500" : "border-amber-500";
+  return (
+    <div>
+      <h4 className="text-sm font-black text-slate-950 dark:text-white">{title}</h4>
+      {items.length ? <ul className="mt-2 grid gap-2 text-sm font-bold leading-6 text-slate-600 dark:text-slate-300">{items.map((item) => <li className={`border-l-2 ${border} pl-3`} key={item}>{item}</li>)}</ul> : <p className="mt-2 text-sm font-bold text-slate-500">확인 가능한 항목이 없습니다.</p>}
+    </div>
+  );
 }
 
 export default EtfDetailPage;

@@ -1,148 +1,113 @@
-# StockFolio ETF Explorer Implementation Report
+# StockFolio ETF Analytics Implementation Report
 
 ## Summary
 
-기존 StockFolio 프로젝트를 새로 생성하지 않고, 기존 React/Vite/Tailwind 레이아웃과 인증/포트폴리오 라우팅을 유지한 상태에서 ETF 탐색 영역을 확장했다.
+ETF 검색, 상세, 비교, 랭킹, 규칙 기반 분석, 교육용 모델 포트폴리오가 동일한 백엔드 표준 스냅샷을 사용하도록 리팩터링했다. 프론트엔드는 금융 API를 직접 호출하지 않는다.
 
-실제 금융 API는 아직 연결하지 않았으므로 모든 ETF 데이터는 `StockFolio mock ETF dataset` 기반 샘플 데이터이며, 화면에는 `샘플 데이터` 배지와 기준 시각을 표시한다.
+숫자 데이터가 없는 경우 임의 값을 생성하지 않고 `null`과 데이터 품질 상태로 반환한다. 프론트에서는 이를 `N/A`로 표시한다.
 
-## Main Routes
+## Data Flow
 
-- `/etf`: ETF 탐색 허브
-- `/etf/search`: ETF 검색
-- `/etf/:slug`: ETF 상세
-- `/etf/compare`: ETF 비교 도구
-- `/etf/compare/:slug`: SEO용 ETF 비교 프리셋
-- `/etf/rankings/high-dividend`: 고분배 ETF 순위
-- `/etf/rankings/monthly-dividend`: 월분배 ETF 순위
-- `/etf/rankings/dividend-growth`: 분배금 성장 ETF 순위
-
-## Modified And Added Files
-
-- `front/src/main.jsx`
-  - TanStack Query `QueryClientProvider` 추가.
-
-- `front/src/App.jsx`
-  - ETF 허브, 검색, 상세, 비교, 순위 라우트 정리.
-
-- `front/src/data/navigation.js`
-  - ETF 탐색/검색/비교/순위 메뉴 구조 반영.
-
-- `front/src/models/etfModels.js`
-  - 현재 JS 프로젝트를 유지하면서 TypeScript 전환을 대비한 JSDoc ETF 모델 정의.
-
-- `front/src/services/etfMockApi.js`
-  - 공개 ETF API를 흉내 내는 Mock API 계층.
-  - 검색, 상세, 성과, 분배금, 구성 종목, 유사 ETF, 비교, 순위 API 메서드 제공.
-
-- `front/src/utils/etfCalculations.js`
-  - CAGR, 총보수 비용 환산, 검색 필터, 정렬, 페이지네이션, 비교 개수 제한 유틸.
-
-- `front/src/components/etf/index.jsx`
-  - ETF 전용 재사용 컴포넌트.
-  - `EtfSearchBox`, `EtfResultCard`, `EtfResultTable`, `EtfMetricCard`, `MetricHelpTooltip`, `BeginnerSummary`, `EtfBadge`, `RiskBadge`, `DataFreshnessBadge`, `CompareTray`, `EtfCompareTable`, `DistributionChart`, `TotalReturnChart`, `HoldingsTable`, `SectorAllocationChart`, `RankingMethodology`, `InvestmentDisclaimer`, `EmptyState`, `ErrorState`, `SkeletonState`, `AdSlot`.
-
-- `front/src/pages/etf/EtfHubPage.jsx`
-  - ETF 허브 페이지.
-  - 대형 검색창, 인기 검색어, ETF 유형 바로가기, 많이 본 ETF, TOP 5 영역, 초보자 가이드, 계산기 연결.
-
-- `front/src/pages/etf/EtfListPage.jsx`
-  - ETF 검색 페이지.
-  - 300ms debounce, 빠른 필터, 선택 chip, 검색 결과 개수, 카드/테이블 전환, 비교담기, 최근 검색어, 키보드 선택.
-
-- `front/src/pages/etf/EtfDetailPage.jsx`
-  - ETF 상세 페이지.
-  - Hero, 핵심 지표 6개, tooltip, 초보자 설명, 적합성 안내, 성과/분배금/구성 종목/위험/비용 탭.
-
-- `front/src/pages/etf/EtfCompareListPage.jsx`
-  - ETF 비교 도구.
-  - Query String 기반 선택 ETF 유지, ETF 추가 검색, 제거, 공유 URL, 최대 비교 개수 제한.
-
-- `front/src/pages/etf/EtfComparePage.jsx`
-  - SEO용 비교 프리셋 페이지.
-
-- `front/src/pages/etf/EtfRankingPage.jsx`
-  - 고분배, 월분배, 분배금 성장 순위 페이지 공통 구현.
-  - 필터, 순위 기준, 데이터 기준일, 전략 배지, 광고 슬롯, 면책 문구 포함.
-
-- `front/public/sitemap.xml`
-  - `/etf/search` 및 ETF 공개 URL 반영.
-
-- `front/scripts/verify-etf-content.mjs`
-  - ETF 핵심 데이터 로직 검증 스크립트.
-
-- `front/package.json`
-  - `@tanstack/react-query` 의존성 및 `verify:etf` 스크립트 추가.
-
-## Public API Contract
-
-Frontend는 외부 금융 API를 직접 호출하지 않는다. Mock 제거 후 아래 Spring Boot 공개 API로 연결한다.
-
-- `GET /api/public/etfs/search`
-  - Pagination, Sorting, Filtering 적용.
-- `GET /api/public/etfs/{ticker}`
-- `GET /api/public/etfs/{ticker}/performance`
-- `GET /api/public/etfs/{ticker}/distributions`
-- `GET /api/public/etfs/{ticker}/holdings`
-- `GET /api/public/etfs/{ticker}/similar`
-- `GET /api/public/etfs/compare?tickers=SCHD,JEPI`
-- `GET /api/public/etfs/rankings/high-dividend`
-- `GET /api/public/etfs/rankings/monthly-dividend`
-- `GET /api/public/etfs/rankings/dividend-growth`
-
-모든 응답에는 다음 메타데이터를 포함해야 한다.
-
-```json
-{
-  "asOf": "2026-07-05 15:30",
-  "source": "provider name",
-  "delayed": true,
-  "mock": false,
-  "currency": "USD"
-}
+```text
+FMP / KRX Open API / OpenDART
+  -> Naver Finance / Yahoo Finance fallback
+  -> MarketDataService raw snapshot
+  -> EtfAnalyticsService standardization
+  -> search / detail / compare / ranking / methodology / model portfolio
+  -> React Query API layer
 ```
 
-## Mock Data Removal Points
+## Standard Classification
 
-실제 API 연결 시 우선 교체할 파일:
+모든 ETF 화면이 다음 분류를 공통 사용한다.
 
-- `front/src/services/etfMockApi.js`
+- 상장 국가: `KR`, `US`
+- 자산 유형: 주식, 채권, 단기채권, 리츠, 원자재, 혼합자산
+- 전략: 시장대표, 배당, 배당성장, 고배당, 커버드콜, 성장, 액티브, 레버리지, 인버스
+- 분배 주기: 최근 370일 실제 지급 이력 기준
+- 환 노출: 기본통화, 환헤지, 환노출, 해당 없음
+- 비교군: `peerGroup`
+- 위험 플래그: 커버드콜, 레버리지, 인버스, 단일종목
 
-교체 방식:
+## Calculation Rules
 
-- `etfMockApi.searchEtfs` → `GET /api/public/etfs/search`
-- `etfMockApi.getEtf` → `GET /api/public/etfs/{ticker}`
-- `etfMockApi.getPerformance` → `GET /api/public/etfs/{ticker}/performance`
-- `etfMockApi.getDistributions` → `GET /api/public/etfs/{ticker}/distributions`
-- `etfMockApi.getHoldings` → `GET /api/public/etfs/{ticker}/holdings`
-- `etfMockApi.getSimilar` → `GET /api/public/etfs/{ticker}/similar`
-- `etfMockApi.compareEtfs` → `GET /api/public/etfs/compare`
-- `etfMockApi.getRanking` → ranking APIs
+- TTM 주당 분배금: 최근 370일 실제 주당 지급액 합계
+- TTM 분배율: `TTM 주당 분배금 / 현재가 * 100`
+- 분배금 변동성: 최근 지급액의 변동계수
+- 3년/5년 분배 성장률: 완료된 연도별 지급액 합계의 CAGR
+- 연속 성장 연수: 완료된 연도 기준 전년 대비 증가가 이어진 횟수
+- 구성종목 중복도: 공통 종목별 `min(ETF A 비중, ETF B 비중)` 합계
+- 데이터 품질: 현재가, 기본정보, 총보수, AUM, 성과, 구성종목, 분배금 이력 확보율
+
+## Ranking Methodology
+
+- 동일 `peerGroup` 안에서만 비교한다.
+- 지표별 5~95 백분위 윈저라이징 후 백분위 점수를 계산한다.
+- 결측 지표는 35점으로 처리하고 데이터 품질 감점을 별도로 적용한다.
+- 레버리지와 인버스 ETF에는 위험 감점을 적용한다.
+- 거래대금이 없을 때 AUM을 유동성 보조 지표로 사용한다.
+- 가중치는 `/api/etfs/methodology`와 `/etf/methodology`에서 공개한다.
+
+## Public API
+
+- `GET /api/etfs/search?keyword=&market=ALL&limit=60`
+- `GET /api/etfs/{ticker}?market=AUTO`
+- `GET /api/etfs/compare?tickers=SCHD,VYM`
+- `GET /api/etfs/rankings/{kind}?market=ALL&excludeCoveredCall=false`
+- `GET /api/etfs/methodology`
+- `POST /api/etfs/model-portfolios/simulate`
+
+지원 랭킹:
+
+- `high-dividend`
+- `monthly-dividend`
+- `dividend-growth`
+- `covered-call`
+- `korea-listed-monthly`
+
+## Public Pages
+
+- `/etf`: ETF 탐색 허브
+- `/etf/search`: 국내·해외 ETF 검색
+- `/etf/:ticker`: 표준 분류와 규칙 분석을 포함한 ETF 상세
+- `/etf/compare`: 최대 4개 ETF 비교와 구성종목 중복도
+- `/etf/rankings/:kind`: 비교군별 랭킹
+- `/etf/methodology`: 데이터·점수 방법론
+- `/etf/model-portfolios`: 위험성향·목적별 교육용 모델 포트폴리오
+
+## Data Source Priority
+
+1. FMP: 미국 주식·ETF·배당·재무·ETF 구성
+2. KRX Open API: 국내 전체 종목·ETF 공식 정보
+3. OpenDART: 국내 기업 재무·공시
+4. 보조 소스: 네이버 증권, Yahoo Finance
+
+각 응답은 기준 시각과 실제 사용된 소스를 포함한다.
 
 ## Verification
 
 ```powershell
-cd front
-npm.cmd run verify:etf
+cd back/StockFolio
+mvn test
+
+cd ../../front
+npm.cmd run lint
 npm.cmd run build
 ```
 
-검증 항목:
+검증 결과:
 
-- 검색 필터
-- 비교담기 최대 개수
-- 데이터 없음 처리
-- API 오류 처리
-- 순위 정렬
-- CAGR 계산
-- 총보수 비용 환산
-- 예상일/확정일 구분
+- Spring Boot 테스트 8개 통과
+- ETF 표준화, 월분배·커버드콜 분류, 분배 성장률, 데이터 품질, 구성종목 중복도 단위 테스트 통과
+- ESLint 오류 및 경고 없음
+- Vite production build 성공
+- 390px 모바일, 1280px 노트북, 1600px 데스크톱 브라우저 확인
+- 검색, 상세, 비교, 랭킹, 방법론, 모델 포트폴리오 API/UI 확인
 
 ## Known Limitations
 
-- ETF 데이터는 샘플 데이터이며 실제 가격, 분배금, 수익률, 구성 종목과 다를 수 있다.
-- 차트는 외부 chart library 없이 Tailwind 기반 미니 차트로 구현했다.
-- 모바일 레이아웃은 CSS 반응형으로 대응했으며 실제 기기별 수동 QA가 추가로 필요하다.
-- FAQ 구조화 데이터와 Breadcrumb JSON-LD는 아직 컴포넌트화하지 않았다.
-- 백엔드 공개 ETF API와 PostgreSQL/Redis 캐싱 구현은 다음 단계 작업이다.
-- 실제 AdSense 스크립트와 Publisher ID는 하드코딩하지 않았다.
+- FMP API 키가 없으면 미국 ETF의 현재가와 분배금은 Yahoo Finance 보조 데이터를 사용한다. 이 경우 총보수, AUM, 구성종목, 장기 성과가 `N/A`일 수 있다.
+- 현재 랭킹 대상은 목적별 검증 후보군이다. 전체 ETF 랭킹을 위해서는 ETF 마스터를 PostgreSQL에 적재하고 일일 배치로 갱신하는 후속 작업이 필요하다.
+- API가 제공하지 않는 변동성, 최대 낙폭, 샤프지수는 추정하지 않는다.
+- 모델 포트폴리오는 교육용 자산배분 예시이며 개인별 투자자문이나 자동매수 추천이 아니다.
+- 실제 AdSense Publisher ID와 광고 스크립트는 포함하지 않는다.

@@ -1,27 +1,36 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import Seo from "../../components/Seo.jsx";
 import {
   AdSlot,
-  EmptyState,
-  ErrorState,
   EtfBadge,
   EtfSearchBox,
   InvestmentDisclaimer,
-  SkeletonState,
 } from "../../components/etf/index.jsx";
-import { etfMockApi, MOCK_ETFS } from "../../services/etfMockApi.js";
 import { stockService } from "../../services/stockService.js";
-import { formatNullable } from "../../utils/etfCalculations.js";
-import { formatMoney, formatPercent } from "../../utils/format.js";
+import { etfMarketService, toEtfSuggestion } from "../../services/etfMarketService.js";
+import { formatMoney } from "../../utils/format.js";
+
+const hubSummary = {
+  popularKeywords: ["S&P 500", "배당 성장", "월분배", "커버드콜", "채권"],
+  typeShortcuts: ["미국 대표지수", "배당 성장", "월 현금흐름", "채권", "커버드콜"],
+};
 
 function EtfHubPage() {
   const navigate = useNavigate();
   const [keyword, setKeyword] = useState("");
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["etf-hub-summary"],
-    queryFn: () => etfMockApi.getHubSummary(),
+  const [debouncedKeyword, setDebouncedKeyword] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedKeyword(keyword.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [keyword]);
+  const suggestionQuery = useQuery({
+    queryKey: ["etf-hub-suggestions", debouncedKeyword],
+    queryFn: () => etfMarketService.searchEtfs(debouncedKeyword, "ALL", 8),
+    enabled: debouncedKeyword.length > 0,
+    staleTime: 5 * 60_000,
+    retry: false,
   });
   const topEtfQuery = useQuery({
     queryKey: ["etf-daily-top", "ALL", 5],
@@ -31,20 +40,14 @@ function EtfHubPage() {
   });
 
   const suggestions = useMemo(() => {
-    const normalized = keyword.trim().toLowerCase();
-    if (!normalized) return [];
-    return MOCK_ETFS.filter((etf) => [etf.ticker, etf.name, etf.provider, etf.indexName, etf.strategy].join(" ").toLowerCase().includes(normalized)).slice(0, 8);
-  }, [keyword]);
+    return (suggestionQuery.data || []).map(toEtfSuggestion);
+  }, [suggestionQuery.data]);
 
   const goSearch = (nextKeyword = keyword) => {
     navigate(`/etf/search${nextKeyword ? `?keyword=${encodeURIComponent(nextKeyword)}` : ""}`);
   };
 
-  if (isLoading) return <SkeletonState rows={4} />;
-  if (isError) return <ErrorState error={error} onRetry={refetch} />;
-
-  const summary = data?.data;
-  if (!summary) return <EmptyState title="ETF 허브 데이터가 없습니다" />;
+  const summary = hubSummary;
   const dailyTopEtfs = topEtfQuery.data?.length ? topEtfQuery.data.slice(0, 5) : [];
 
   return (
@@ -62,7 +65,7 @@ function EtfHubPage() {
             value={keyword}
             onChange={setKeyword}
             onSubmit={goSearch}
-            onSelect={(etf) => navigate(`/etf/${etf.slug}`)}
+            onSelect={(etf) => navigate(`/etf/${etf.ticker.toLowerCase()}`)}
           />
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -98,26 +101,16 @@ function EtfHubPage() {
             ))}
           </div>
         ) : (
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {summary.mostViewed.slice(0, 5).map((etf) => (
-            <Link className="rounded-2xl bg-slate-50 p-4 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700" key={etf.slug} to={`/etf/${etf.slug}`}>
-              <div className="flex items-start justify-between gap-2">
-                <div><p className="text-lg font-black text-slate-950 dark:text-white">{etf.ticker}</p><p className="mt-1 text-sm font-bold text-slate-600 dark:text-slate-300">{etf.name}</p></div>
-                <EtfBadge tone={etf.listingRegion === "domestic" ? "emerald" : "cyan"}>{etf.regionLabel}</EtfBadge>
-              </div>
-              <p className="mt-3 text-sm font-semibold leading-6 text-slate-600 dark:text-slate-300">{etf.beginnerDescription}</p>
-            </Link>
-            ))}
-          </div>
+          <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">오늘의 거래대금 데이터를 불러오지 못했습니다. ETF 검색은 계속 사용할 수 있습니다.</p>
         )}
       </section>
 
       <AdSlot />
 
       <div className="grid gap-4 xl:grid-cols-3">
-        <RankingPreview title="고배당 ETF TOP 5" items={summary.highDividend} to="/etf/rankings/high-dividend" />
-        <RankingPreview title="월배당 ETF TOP 5" items={summary.monthly} to="/etf/rankings/monthly-dividend" />
-        <RankingPreview title="배당성장 ETF TOP 5" items={summary.growth} to="/etf/rankings/dividend-growth" />
+        <RankingPreview title="고배당 ETF 랭킹" description="TTM 분배율과 분배 안정성, 성과, 비용을 함께 평가합니다." to="/etf/rankings/high-dividend" />
+        <RankingPreview title="월분배 ETF 랭킹" description="지급 규칙성과 분배 안정성을 중심으로 같은 비교군끼리 평가합니다." to="/etf/rankings/monthly-dividend" />
+        <RankingPreview title="배당 성장 ETF 랭킹" description="실제 연도별 분배금 CAGR과 연속 성장 이력을 우선 확인합니다." to="/etf/rankings/dividend-growth" />
       </div>
 
       <section className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
@@ -144,7 +137,6 @@ function EtfHubPage() {
 }
 
 function DailyTopCard({ etf, index }) {
-  const staticEtf = MOCK_ETFS.find((item) => item.ticker.toUpperCase() === etf.ticker.toUpperCase());
   const card = (
     <>
       <div className="flex items-start justify-between gap-2">
@@ -160,33 +152,18 @@ function DailyTopCard({ etf, index }) {
     </>
   );
 
-  if (staticEtf) {
-    return (
-      <Link className="rounded-2xl bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700" to={`/etf/${staticEtf.slug}`}>
-        {card}
-      </Link>
-    );
-  }
-
-  return <article className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-800">{card}</article>;
+  return <Link className="rounded-2xl bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700" to={`/etf/${etf.ticker.toLowerCase()}`}>{card}</Link>;
 }
 
-function RankingPreview({ title, items, to }) {
+function RankingPreview({ title, description, to }) {
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-xl font-black text-slate-950 dark:text-white">{title}</h3>
         <Link className="text-xs font-black text-cyan-700 dark:text-cyan-300" to={to}>더보기</Link>
       </div>
-      <div className="mt-4 grid gap-2">
-        {items.map((etf, index) => (
-          <Link className="grid grid-cols-[32px_1fr_auto] items-center gap-3 rounded-xl bg-slate-50 px-3 py-3 text-sm dark:bg-slate-800" key={etf.slug} to={`/etf/${etf.slug}`}>
-            <span className="font-black text-slate-400">#{index + 1}</span>
-            <span className="font-black text-slate-800 dark:text-slate-200">{etf.ticker}</span>
-            <span className="font-black text-emerald-700 dark:text-emerald-300">{formatNullable(etf.distribution.ttmDistributionRate, formatPercent)}</span>
-          </Link>
-        ))}
-      </div>
+      <p className="mt-4 text-sm font-bold leading-7 text-slate-600 dark:text-slate-300">{description}</p>
+      <div className="mt-4 flex flex-wrap gap-2"><EtfBadge>peerGroup</EtfBadge><EtfBadge tone="emerald">데이터 품질 반영</EtfBadge></div>
     </article>
   );
 }

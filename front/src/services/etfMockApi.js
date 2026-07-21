@@ -1,4 +1,4 @@
-import { DATA_AS_OF, comparisons, etfs, getComparison, getEtf, rankingPages } from "../data/publicContent.js";
+import { DATA_AS_OF, etfs, getComparison, rankingPages } from "../data/publicContent.js";
 import { calculateAnnualCost, calculateCagr, filterEtfs, getListingRegion, paginate, sortEtfs } from "../utils/etfCalculations.js";
 
 const API_LATENCY_MS = 240;

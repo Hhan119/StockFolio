@@ -59,7 +59,7 @@ function EtfCompareListPage() {
   const compareQuery = useQuery({
     queryKey: ["etf-compare", tickers.join(",")],
     queryFn: () => etfMarketService.compareEtfs(tickers),
-    enabled: tickers.length > 0,
+    enabled: tickers.length >= 2,
     retry: false,
   });
 
@@ -132,6 +132,7 @@ function EtfCompareListPage() {
 
       {tickers.length > 0 && compareQuery.isLoading && <SkeletonState rows={3} />}
       {tickers.length > 0 && compareQuery.isError && <ErrorState error={compareQuery.error} onRetry={compareQuery.refetch} />}
+      {tickers.length === 1 && <EmptyState title="ETF를 하나 더 선택해 주세요" description="비용, 분배금, 성과와 구성종목 중복도를 비교하려면 2개 이상 필요합니다." />}
       {tickers.length > 0 && compareQuery.data?.data?.length > 0 && (
         <section className="grid gap-5">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -146,11 +147,37 @@ function EtfCompareListPage() {
             ))}
           </div>
           <EtfCompareTable etfs={compareQuery.data.data} />
+          <CompareInsights observations={compareQuery.data.observations} overlaps={compareQuery.data.overlaps} />
           <AdSlot />
           <BeginnerCompareGuide />
           <InvestmentDisclaimer />
         </section>
       )}
+    </section>
+  );
+}
+
+function CompareInsights({ observations = [], overlaps = [] }) {
+  return (
+    <section className="grid gap-4 lg:grid-cols-2">
+      <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <h3 className="text-lg font-black text-slate-950 dark:text-white">목적별 비교 해석</h3>
+        <ul className="mt-3 grid gap-3 text-sm font-bold leading-6 text-slate-600 dark:text-slate-300">
+          {observations.map((item) => <li className="border-l-2 border-cyan-500 pl-3" key={item}>{item}</li>)}
+        </ul>
+      </article>
+      <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <h3 className="text-lg font-black text-slate-950 dark:text-white">구성종목 중복도</h3>
+        <div className="mt-3 grid gap-2">
+          {overlaps.map((item) => (
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800" key={`${item.leftTicker}-${item.rightTicker}`}>
+              <span className="font-black text-slate-700 dark:text-slate-200">{item.leftTicker} · {item.rightTicker}</span>
+              <span className="font-black text-cyan-700 dark:text-cyan-300">{item.overlapPercent == null ? "데이터 부족" : `${Number(item.overlapPercent).toFixed(2)}%`}</span>
+            </div>
+          ))}
+          {!overlaps.length && <p className="text-sm font-bold text-slate-500">비교 가능한 구성종목 데이터가 없습니다.</p>}
+        </div>
+      </article>
     </section>
   );
 }

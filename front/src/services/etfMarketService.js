@@ -5,6 +5,7 @@ import { calculateAnnualCost } from "../utils/etfCalculations.js";
 const snapshotPromises = new Map();
 
 const asNumber = (value) => {
+  if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 };
@@ -131,12 +132,19 @@ const toRichEtf = (snapshot) => {
     mock: false,
     currency: quote.currency || profile.currency || (snapshot.market === "KR" ? "KRW" : "USD"),
   };
+  const snapshotName = String(snapshot.name || "").trim();
+  const displayName = snapshotName && snapshotName.toUpperCase() !== String(snapshot.ticker).toUpperCase()
+    ? snapshotName
+    : editorial?.name || snapshotName || snapshot.ticker;
+  const provider = profile.provider && !String(profile.provider).toLowerCase().includes("unavailable")
+    ? profile.provider
+    : editorial?.provider || "운용사 정보 없음";
 
   return {
     slug: snapshot.ticker.toLowerCase(),
     ticker: snapshot.ticker,
-    name: snapshot.name,
-    provider: profile.provider || "운용사 정보 없음",
+    name: displayName,
+    provider,
     market: snapshot.market === "KR" ? "KRX" : profile.exchange || "US",
     currency: metadata.currency,
     listingRegion,
@@ -194,7 +202,7 @@ const loadSnapshot = (ticker, market = marketForTicker(ticker)) => {
   const normalizedTicker = String(ticker || "").trim().toUpperCase();
   const key = `${market}:${normalizedTicker}`;
   if (!snapshotPromises.has(key)) {
-    const request = api.get(`/api/market/instruments/${encodeURIComponent(normalizedTicker)}`, { params: { market } })
+    const request = api.get(`/api/etfs/${encodeURIComponent(normalizedTicker)}`, { params: { market } })
       .then((response) => response.data)
       .finally(() => window.setTimeout(() => snapshotPromises.delete(key), 5 * 60 * 1000));
     snapshotPromises.set(key, request);
@@ -204,23 +212,84 @@ const loadSnapshot = (ticker, market = marketForTicker(ticker)) => {
 
 export const etfMarketService = {
   searchEtfs(keyword, market = "ALL", limit = 60) {
-    return api.get("/api/market/etfs/search", { params: { keyword, market, limit } }).then((response) => response.data);
+    return api.get("/api/etfs/search", { params: { keyword, market, limit } }).then((response) => response.data);
   },
 
   async getEtf(ticker, market = marketForTicker(ticker)) {
-    const snapshot = await loadSnapshot(ticker, market);
+    const standardized = await loadSnapshot(ticker, market);
+    const snapshot = standardized?.snapshot;
     if (!snapshot?.etf) throw new Error("ETF 정보를 찾지 못했습니다.");
-    const data = toRichEtf(snapshot);
+    const rich = toRichEtf(snapshot);
+    const data = {
+      ...rich,
+      classification: standardized.classification,
+      metrics: standardized.metrics,
+      dataQuality: standardized.dataQuality,
+      analysis: standardized.analysis,
+      distribution: {
+        ...rich.distribution,
+        frequency: frequencyLabel(standardized.classification?.distributionFrequency),
+        distributionCagr3y: standardized.metrics?.distributionCagrThreeYear,
+        distributionCagr5y: standardized.metrics?.distributionCagrFiveYear,
+        annualIncreaseYears: standardized.metrics?.consecutiveGrowthYears,
+      },
+    };
     return { data, meta: data.metadata };
   },
 
   async compareEtfs(tickers = []) {
-    const settled = await Promise.allSettled(tickers.slice(0, 4).map((ticker) => this.getEtf(ticker)));
-    const data = settled.filter((result) => result.status === "fulfilled").map((result) => result.value.data);
+    const response = await api.get("/api/etfs/compare", { params: { tickers: tickers.slice(0, 4).join(",") } });
+    const payload = response.data;
+    const data = (payload.items || []).map((standardized) => {
+      const rich = toRichEtf(standardized.snapshot);
+      return {
+        ...rich,
+        classification: standardized.classification,
+        metrics: standardized.metrics,
+        dataQuality: standardized.dataQuality,
+        analysis: standardized.analysis,
+        distribution: {
+          ...rich.distribution,
+          frequency: frequencyLabel(standardized.classification?.distributionFrequency),
+          distributionCagr3y: standardized.metrics?.distributionCagrThreeYear,
+          distributionCagr5y: standardized.metrics?.distributionCagrFiveYear,
+          annualIncreaseYears: standardized.metrics?.consecutiveGrowthYears,
+        },
+      };
+    });
     if (!data.length) throw new Error("비교할 ETF 정보를 불러오지 못했습니다.");
-    return { data, meta: { asOf: new Date().toISOString(), source: "시장 데이터 API", mock: false } };
+    return {
+      data,
+      overlaps: payload.overlaps || [],
+      observations: payload.observations || [],
+      meta: { asOf: payload.asOf, source: "ETF 표준 분석 API", mock: false },
+    };
+  },
+
+  async getRanking(kind, { market = "ALL", excludeCoveredCall = false } = {}) {
+    const response = await api.get(`/api/etfs/rankings/${encodeURIComponent(kind)}`, { params: { market, excludeCoveredCall } });
+    return response.data;
+  },
+
+  async getMethodology() {
+    const response = await api.get("/api/etfs/methodology");
+    return response.data;
+  },
+
+  async simulateModelPortfolio(input) {
+    const response = await api.post("/api/etfs/model-portfolios/simulate", input);
+    return response.data;
   },
 };
+
+const frequencyLabel = (frequency) => ({
+  MONTHLY: "월",
+  QUARTERLY: "분기",
+  SEMIANNUAL: "반기",
+  ANNUAL: "연",
+  IRREGULAR: "비정기",
+  NONE: "정보 없음",
+}[frequency] || "정보 없음");
 
 export const toEtfSuggestion = (item) => ({
   ...item,

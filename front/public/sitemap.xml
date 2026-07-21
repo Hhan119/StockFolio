@@ -11,6 +11,8 @@
   <url><loc>https://stockfolio.example.com/calculators/average-price</loc></url>
   <url><loc>https://stockfolio.example.com/etf</loc></url>
   <url><loc>https://stockfolio.example.com/etf/search</loc></url>
+  <url><loc>https://stockfolio.example.com/etf/methodology</loc></url>
+  <url><loc>https://stockfolio.example.com/etf/model-portfolios</loc></url>
   <url><loc>https://stockfolio.example.com/etf/schd</loc></url>
   <url><loc>https://stockfolio.example.com/etf/jepi</loc></url>
   <url><loc>https://stockfolio.example.com/etf/jepq</loc></url>

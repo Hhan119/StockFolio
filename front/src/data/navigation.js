@@ -27,6 +27,8 @@ export const navigationGroups = [
       { label: "ETF 탐색", path: "/etf" },
       { label: "ETF 검색", path: "/etf/search" },
       { label: "ETF 비교", path: "/etf/compare" },
+      { label: "모델 포트폴리오", path: "/etf/model-portfolios" },
+      { label: "데이터·랭킹 방법론", path: "/etf/methodology" },
       { label: "고배당 ETF 순위", path: "/etf/rankings/high-dividend" },
       { label: "월배당 ETF 순위", path: "/etf/rankings/monthly-dividend" },
       { label: "배당 성장 ETF 순위", path: "/etf/rankings/dividend-growth" },
@@ -81,7 +83,7 @@ export function isNavigationItemActive(pathname, item) {
 
   if (item.path === "/etf") {
     const detailMatch = pathname.match(/^\/etf\/([^/]+)$/);
-    return Boolean(detailMatch && !["search", "compare", "rankings"].includes(detailMatch[1]));
+    return Boolean(detailMatch && !["search", "compare", "rankings", "methodology", "model-portfolios"].includes(detailMatch[1]));
   }
 
   return false;

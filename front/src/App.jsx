@@ -30,6 +30,8 @@ import EtfDetailPage from "./pages/etf/EtfDetailPage.jsx";
 import EtfCompareListPage from "./pages/etf/EtfCompareListPage.jsx";
 import EtfComparePage from "./pages/etf/EtfComparePage.jsx";
 import EtfRankingPage from "./pages/etf/EtfRankingPage.jsx";
+import EtfMethodologyPage from "./pages/etf/EtfMethodologyPage.jsx";
+import ModelPortfolioPage from "./pages/etf/ModelPortfolioPage.jsx";
 import AboutPage from "./pages/legal/AboutPage.jsx";
 import ContactPage from "./pages/legal/ContactPage.jsx";
 import PrivacyPage from "./pages/legal/PrivacyPage.jsx";
@@ -70,6 +72,8 @@ function App() {
           <Route path="/etf/compare" element={<EtfCompareListPage />} />
           <Route path="/etf/compare/:slug" element={<EtfComparePage />} />
           <Route path="/etf/rankings/:slug" element={<EtfRankingPage />} />
+          <Route path="/etf/methodology" element={<EtfMethodologyPage />} />
+          <Route path="/etf/model-portfolios" element={<ModelPortfolioPage />} />
           <Route path="/etf/:slug" element={<EtfDetailPage />} />
           <Route path="/dividends/calendar" element={<PublicDividendCalendarPage />} />
           <Route path="/dividends/guide" element={<DividendGuidePage />} />

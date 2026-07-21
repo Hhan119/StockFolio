@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { portfolioService } from "../../services/portfolioService.js";
 import { stockService } from "../../services/stockService.js";
@@ -43,7 +43,7 @@ function PortfolioManagementPage() {
     return { totalCost, totalValue, profit, profitRate };
   }, [draftHoldings]);
 
-  const loadPortfolios = async (nextSelectedId = selectedId) => {
+  const loadPortfolios = useCallback(async (nextSelectedId = selectedId) => {
     const data = await portfolioService.list();
     setPortfolios(data);
     if (!data.length) {
@@ -56,19 +56,19 @@ function PortfolioManagementPage() {
       ? String(nextSelectedId)
       : String(data[0].id);
     setSelectedId(nextId);
-  };
+  }, [selectedId]);
 
-  const loadSelectedDetail = async (portfolioId) => {
+  const loadSelectedDetail = useCallback(async (portfolioId) => {
     setSelectedDetail(portfolioId ? await portfolioService.detail(portfolioId) : null);
-  };
-
-  useEffect(() => {
-    loadPortfolios().catch(() => setError("포트폴리오 목록을 불러오지 못했습니다."));
   }, []);
 
   useEffect(() => {
+    loadPortfolios().catch(() => setError("포트폴리오 목록을 불러오지 못했습니다."));
+  }, [loadPortfolios]);
+
+  useEffect(() => {
     loadSelectedDetail(selectedId).catch(() => setError("선택한 포트폴리오를 불러오지 못했습니다."));
-  }, [selectedId]);
+  }, [loadSelectedDetail, selectedId]);
 
   useEffect(() => {
     if (!editingStock) return undefined;

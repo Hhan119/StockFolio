@@ -52,6 +52,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/api/analysis/ai").permitAll()
                         .requestMatchers("/api/market/**").permitAll()
+                        .requestMatchers("/api/etfs/**").permitAll()
                         .requestMatchers("/api/stocks/search").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/stocks/*").permitAll()
                         .anyRequest().authenticated()

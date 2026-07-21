@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { formatExpenseRatio, formatMoney, formatPercent } from "../../utils/format.js";
 import { formatNullable, getPerformanceTone, NA } from "../../utils/etfCalculations.js";
@@ -459,7 +459,7 @@ export function RankingMethodology({ children }) {
 export function InvestmentDisclaimer() {
   return (
     <p className="rounded-2xl border border-slate-200 bg-white p-4 text-xs font-bold leading-6 text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-      본 화면의 정보는 투자 참고용이며 특정 ETF의 매수·매도 추천이 아닙니다. 과거 수익률과 과거 분배금은 미래 수익률과 분배금을 보장하지 않습니다. Mock 데이터는 실제 금융 데이터와 다를 수 있습니다.
+      본 화면의 정보는 투자 참고용이며 특정 ETF의 매수·매도 추천이 아닙니다. 과거 수익률과 과거 분배금은 미래 결과를 보장하지 않으며, 공급자 지연과 산정 기준에 따라 실제 값과 차이가 날 수 있습니다.
     </p>
   );
 }
